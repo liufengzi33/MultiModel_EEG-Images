@@ -1,31 +1,32 @@
 import numpy as np
-import torch
-from PIL import Image
 from matplotlib import pyplot as plt
-from pandas.core.accessor import register_dataframe_accessor
 from torch.utils.data import Dataset
 from skimage import io
 from torchvision import transforms
 import pandas as pd
 from torchvision.transforms.functional import crop
-
+from PIL import Image
 import os
-from os import listdir
-from os.path import isfile, join
 
 
 def crop_google_logo(img):
     return crop(img, 0, 0, img.size[1] - 25, img.size[0])  # D裁剪google logo底部25个像素
 
 
-# 定义一种transforms
+# 定义一种transforms --对应的是AlexNet
 transform_cnn = transforms.Compose([
-    transforms.ToPILImage(),
     transforms.Lambda(crop_google_logo),
     transforms.Resize((244, 244)),
     transforms.ToTensor(),
 ])
-
+# 改进后的transform--对应的是AlexNet
+transform_cnn_2 = transforms.Compose([
+    transforms.Lambda(lambda img: crop(img, top=0, left=0, height=img.size[1]-25, width=img.size[0])),
+    transforms.Resize((244, 244)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],  # ImageNet统计量
+                         std=[0.229, 0.224, 0.225])
+])
 
 class MyPP2Dataset(Dataset):
     """
@@ -83,8 +84,7 @@ class MyPP2Dataset(Dataset):
     def get_image_by_name(self, image_name):
         # 读取图像
         image_path = os.path.join(self.img_dir, image_name)
-        image = io.imread(image_path)
-        return image
+        return Image.open(image_path).convert('RGB')  # 确保转换为RGB
 
 
 if __name__ == "__main__":
