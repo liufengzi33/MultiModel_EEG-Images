@@ -1,7 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from torch.utils.data import Dataset
-from skimage import io
+from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 import pandas as pd
 from torchvision.transforms.functional import crop
@@ -10,23 +9,24 @@ import os
 
 
 def crop_google_logo(img):
-    return crop(img, 0, 0, img.size[1] - 25, img.size[0])  # D裁剪google logo底部25个像素
+    return crop(img, top=0, left=0, height=img.size[1] - 25, width=img.size[0])  # D裁剪google logo底部25个像素
 
 
 # 定义一种transforms --对应的是AlexNet
 transform_cnn = transforms.Compose([
     transforms.Lambda(crop_google_logo),
-    transforms.Resize((244, 244)),
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
 ])
 # 改进后的transform--对应的是AlexNet
 transform_cnn_2 = transforms.Compose([
-    transforms.Lambda(lambda img: crop(img, top=0, left=0, height=img.size[1]-25, width=img.size[0])),
-    transforms.Resize((244, 244)),
+    transforms.Lambda(crop_google_logo),
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406],  # ImageNet统计量
                          std=[0.229, 0.224, 0.225])
 ])
+
 
 class MyPP2Dataset(Dataset):
     """
@@ -43,7 +43,7 @@ class MyPP2Dataset(Dataset):
     """
 
     def __init__(self, csv_file="data/safe_qscores_high2low.xlsx",
-                 transform=transform_cnn,
+                 transform=transform_cnn_2,
                  img_dir="data",
                  eeg_dir="data/EEG/seg_eeg_data",
                  is_flipped=False,
@@ -85,6 +85,31 @@ class MyPP2Dataset(Dataset):
         # 读取图像
         image_path = os.path.join(self.img_dir, image_name)
         return Image.open(image_path).convert('RGB')  # 确保转换为RGB
+
+
+def create_dataloaders(dataset, train_ratio=0.8, batch_size=32, shuffle=True):
+    """
+    创建训练集和测试集的DataLoader
+    Args:
+        dataset (Dataset): 自定义的PyTorch数据集
+        train_ratio (float): 训练集所占比例，默认0.8
+        batch_size (int): 批大小
+        shuffle (bool): 是否打乱训练集
+    Returns:
+        train_loader, test_loader: 分别对应训练和测试的DataLoader
+    """
+    dataset_size = len(dataset)
+    train_size = int(train_ratio * dataset_size)
+    test_size = dataset_size - train_size
+
+    # 划分训练集和测试集
+    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+
+    # 构造DataLoader
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle)
+
+    return train_loader, test_loader
 
 
 if __name__ == "__main__":
