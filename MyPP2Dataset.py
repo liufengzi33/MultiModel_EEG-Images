@@ -1,33 +1,12 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from torch.utils.data import Dataset, DataLoader, random_split
-from torchvision import transforms
 import pandas as pd
-from torchvision.transforms.functional import crop
 from PIL import Image
 import os
+from utils.my_transforms import transform_cnn_2
 
-
-def crop_google_logo(img):
-    return crop(img, top=0, left=0, height=img.size[1] - 25, width=img.size[0])  # D裁剪google logo底部25个像素
-
-
-# 定义一种transforms --对应的是AlexNet
-transform_cnn = transforms.Compose([
-    transforms.Lambda(crop_google_logo),
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-])
-# 改进后的transform--对应的是AlexNet
-transform_cnn_2 = transforms.Compose([
-    transforms.Lambda(crop_google_logo),
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],  # ImageNet统计量
-                         std=[0.229, 0.224, 0.225])
-])
-
-
+# TODO 支持多被试训练（multi-subject dataset），可以拓展为合并多个 `MyPP2Dataset` 实例组成 `ConcatDataset` ！！！
 class MyPP2Dataset(Dataset):
     """
     实验数据构造pytorch数据集，读取data/safe_qscores_high2low.xlsx文件 共计300组实验对
@@ -107,7 +86,7 @@ def create_dataloaders(dataset, train_ratio=0.8, batch_size=32, shuffle=True):
 
     # 构造DataLoader
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader
 

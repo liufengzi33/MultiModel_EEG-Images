@@ -74,6 +74,7 @@ class FusionNetwork(nn.Module):
 class RankingNetwork(nn.Module):
     def __init__(self, input_dim):
         super(RankingNetwork, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.rank = nn.Sequential(
             nn.Linear(input_dim, 4096),
             nn.ReLU(),
@@ -83,6 +84,10 @@ class RankingNetwork(nn.Module):
         self._initialize_weights()
 
     def forward(self, x):
+        # 先进行全局平均池化
+        x = self.avg_pool(x)
+        # 展平
+        x = x.view(x.size(0), -1)
         return self.rank(x)
 
     def _initialize_weights(self):
