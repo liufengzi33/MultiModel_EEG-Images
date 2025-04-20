@@ -1,5 +1,5 @@
 import torch
-
+from utils.my_transforms import transform_cnn_2
 
 class Config:
     def __init__(self):
@@ -8,6 +8,7 @@ class Config:
         self.num_epochs = 400
         self.learning_rate = 0.001
         self.momentum = 0.9
+        self.transform = transform_cnn_2
 
         # Early Stop 设置
         self.lr_decay_factor = 0.1

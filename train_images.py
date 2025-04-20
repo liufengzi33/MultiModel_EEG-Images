@@ -12,7 +12,6 @@ from utils.save_confusion_matrix import save_confusion_matrix
 import numpy as np
 from tqdm import tqdm
 
-from utils.my_transforms import transform_cnn_2
 from utils.early_stop import SchedulerEarlyStopper
 
 # 设置随机种子保证可重复性
@@ -257,10 +256,10 @@ def evaluate_rsscnn(model, dataloader, return_preds=False):
 
 
 if __name__ == "__main__":
-    # 创建数据集
-    dataset = MyPP2Dataset(is_flipped=False, transform=transform_cnn_2)
-
     cfg = config.config_image_model.Config()
+
+    # 创建数据集
+    dataset = MyPP2Dataset(transform=cfg.transform)
 
     # 训练SSCNN模型  ---已经跑通，没问题
     print("Training SSCNN with ...", cfg.base_model_name)
@@ -280,7 +279,7 @@ if __name__ == "__main__":
               title="SSCNN Training Curve",
               save_path=f"outputs/training_curve/sscnn/{cfg.base_model_name}/training_curve.png", )
 
-    # 训练RSSCNN模型
+    # 训练RSSCNN模型 ---已经跑通，没问题
     print("\nTraining RSSCNN with", cfg.base_model_name)
     early_stopper_rsscnn = SchedulerEarlyStopper(max_plateaus=cfg.max_lr_plateaus)  # 初始化早停器
 
