@@ -20,14 +20,18 @@ np.random.seed(42)
 
 
 # 训练SSCNN模型
-def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, early_stopper=None, device=None,
+def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, early_stopper=None,
+                momentum=0.9,
+                factor=0.1,
+                patience=10,
+                device=None,
                 my_dataset=None):
     train_loader, val_loader = create_dataloaders(my_dataset, train_ratio=0.8, batch_size=batch_size, shuffle=True)
     model = SSCNN(base_model_name=model_name).to(device)
     model.device = device
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
     best_acc = 0.0
@@ -105,11 +109,15 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
 
 # 训练RSSCNN模型
 def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, batch_size=4,
-                 early_stopper=None, device=None, my_dataset=None):
+                 early_stopper=None,
+                 momentum=0.9,
+                 factor=0.1,
+                 patience=10,
+                 device=None, my_dataset=None):
     train_loader, val_loader = create_dataloaders(my_dataset, train_ratio=0.8, batch_size=batch_size, shuffle=True)
     model = RSSCNN(base_model_name=model_name, lambda_r=lambda_r).to(device)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
     best_acc = 0.0
@@ -272,6 +280,9 @@ if __name__ == "__main__":
         batch_size=cfg.batch_size,
         early_stopper=early_stopper_sscnn,
         device=cfg.device,
+        momentum=cfg.momentum,
+        factor=cfg.factor,
+        patience=cfg.patience,
         my_dataset=dataset
     )
 
@@ -291,6 +302,9 @@ if __name__ == "__main__":
         batch_size=cfg.batch_size,
         early_stopper=early_stopper_rsscnn,
         device=cfg.device,
+        momentum=cfg.momentum,
+        factor=cfg.factor,
+        patience=cfg.patience,
         my_dataset=dataset
     )
 

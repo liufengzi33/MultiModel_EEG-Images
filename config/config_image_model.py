@@ -8,6 +8,8 @@ class Config:
         self.num_epochs = 400
         self.learning_rate = 0.001
         self.momentum = 0.9
+        self.factor = 0.1
+        self.patience = 10
         self.transform = transform_cnn_2
 
         # Early Stop 设置
