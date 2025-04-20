@@ -53,7 +53,10 @@ class FusionNetwork(nn.Module):
 
     def forward(self, x1, x2):
         combined = torch.cat([x1, x2], dim=1)
-        return self.classifier(self.avg_pool(self.fusion_convs(combined)))
+        features = self.fusion_convs(combined)
+        pooled = self.avg_pool(features)
+        flattened = pooled.view(pooled.size(0), -1)
+        return self.classifier(flattened)
 
     def _initialize_weights(self):
         for m in self.modules():
