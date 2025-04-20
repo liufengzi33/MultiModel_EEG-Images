@@ -1,38 +1,32 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
-import pandas as pd
 
 # 使用 seaborn 的主题风格
 sns.set_theme(style='whitegrid', palette='muted', font_scale=1.2)
 
-def plot_training_curve(history, title):
+def live_plot(history, save_path=None):
     # 将 history 转为 DataFrame 格式，便于使用 seaborn
-    df = pd.DataFrame({
-        'Epoch': range(1, len(history['train_loss']) + 1),
-        'Train Loss': history['train_loss'],
-        'Val Loss': history['val_loss'],
-        'Train Acc': history['train_acc'],
-        'Val Acc': history['val_acc'],
-    })
+    epochs = range(1, len(history['train_loss']) + 1)
 
-    plt.figure(figsize=(12, 4))
-
-    # 绘制损失曲线
+    plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
-    sns.lineplot(x='Epoch', y='value', hue='variable',
-                 data=pd.melt(df[['Epoch', 'Train Loss', 'Val Loss']], ['Epoch']),
-                 linewidth=2.0)
+    plt.plot(epochs, history['train_loss'], 'bo-', label='Train Loss')
+    plt.plot(epochs, history['val_loss'], 'ro-', label='Val Loss')
     plt.title('Loss Curve')
+    plt.xlabel('Epoch')
     plt.ylabel('Loss')
+    plt.legend()
 
-    # 绘制准确率曲线
     plt.subplot(1, 2, 2)
-    sns.lineplot(x='Epoch', y='value', hue='variable',
-                 data=pd.melt(df[['Epoch', 'Train Acc', 'Val Acc']], ['Epoch']),
-                 linewidth=2.0)
+    plt.plot(epochs, history['train_acc'], 'bo-', label='Train Acc')
+    plt.plot(epochs, history['val_acc'], 'ro-', label='Val Acc')
     plt.title('Accuracy Curve')
+    plt.xlabel('Epoch')
     plt.ylabel('Accuracy (%)')
+    plt.legend()
 
-    plt.suptitle(title, fontsize=16)
     plt.tight_layout()
-    plt.show()
+    if save_path:
+        plt.savefig(save_path)
+    plt.pause(0.01)
+    plt.clf()
