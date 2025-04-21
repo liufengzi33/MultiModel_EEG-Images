@@ -1,10 +1,12 @@
 import numpy as np
+import torch
 from matplotlib import pyplot as plt
-from torch.utils.data import Dataset, DataLoader, random_split, Subset
+from torch.utils.data import Dataset, DataLoader, random_split, Subset,ConcatDataset
 import pandas as pd
 from PIL import Image
 import os
-from utils.my_transforms import transform_cnn_2
+from utils.my_transforms import transform_cnn_2, transform_cnn
+
 
 class MyPP2Dataset(Dataset):
     """
@@ -57,11 +59,13 @@ class MyPP2Dataset(Dataset):
         eeg_path = os.path.join(self.eeg_dir, self.subject_id, eeg_filename)
         eeg_data = np.load(eeg_path)  # (64, 6000)
 
-        # TODO 后续eeg_data可能也需要分成左图和右图对应的eeg 看看要不要转成float32的
         # 取左右图呈现期间的 EEG（采样率 1000Hz，2秒各自为2000点）
         left_eeg = eeg_data[:, 2000:4000].astype(np.float32)  # 2~4秒
         right_eeg = eeg_data[:, 4000:6000].astype(np.float32)  # 4~6秒
-        # input_eeg = np.concatenate([left_eeg, right_eeg], axis=1).astype(np.float32)  # shape (64, 4000)
+
+        left_eeg = torch.from_numpy(left_eeg)  # 转成tensor
+        right_eeg = torch.from_numpy(right_eeg)
+
         return left_img, right_img, left_eeg, right_eeg, label
 
     def get_image_by_name(self, image_name):
@@ -72,7 +76,7 @@ class MyPP2Dataset(Dataset):
 
 def create_dataloaders(dataset, batch_size=4, shuffle=True):
     """
-    创建训练集和测试集的DataLoader，按顺序9:1固定分割（适用于总长度为300的数据集）
+    创建训练集和测试集的DataLoader，按顺序9:1固定分割（适用于总长度为300的数据集）,适用于单图像或者单脑电的训练
     Args:
         dataset (Dataset): 自定义的PyTorch数据集，长度必须为300
         batch_size (int): 批大小
@@ -96,9 +100,43 @@ def create_dataloaders(dataset, batch_size=4, shuffle=True):
     return train_loader, test_loader
 
 
+def create_subject_dataloaders(dataset_1, dataset_2, batch_size=4, shuffle=True):
+    """
+    创建一个被试的图像翻转和不翻转的训练集和测试集的DataLoader，按顺序9:1固定分割（适用于总长度为300的数据集）
+    适用于多模态训练
+    要求dataset_1和dataset_2是同一个被试的两次数据
+    Args:
+        dataset_1 (Dataset): 自定义的PyTorch数据集，长度必须为300，图像对未翻转
+        dataset_2 (Dataset): 自定义的PyTorch数据集，长度必须为300，图像对翻转
+        batch_size (int): 批大小
+        shuffle (bool): 是否打乱训练集
+    Returns:
+        train_loader, test_loader: 分别对应训练和测试的DataLoader
+    """
+
+    # 固定按顺序划分
+    train_indices = list(range(0, 270))
+    test_indices = list(range(270, 300))
+
+    train_dataset_1 = Subset(dataset_1, train_indices)
+    test_dataset_1 = Subset(dataset_1, test_indices)
+
+    train_dataset_2 = Subset(dataset_2, train_indices)
+    test_dataset_2 = Subset(dataset_2, test_indices)
+    # 合并训练集和测试集
+    train_dataset = ConcatDataset([train_dataset_1, train_dataset_2])
+    test_dataset = ConcatDataset([test_dataset_1, test_dataset_2])
+
+    # 构造DataLoader
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, test_loader
+
+
 if __name__ == "__main__":
     # 创建数据集实例
-    dataset = MyPP2Dataset(is_flipped=False)
+    dataset = MyPP2Dataset(is_flipped=False, transform=transform_cnn)
 
     # 获取数据集长度
     print(f"数据集长度: {len(dataset)}")
