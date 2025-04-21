@@ -20,19 +20,25 @@ class BaseFeatureExtractor(nn.Module):
         elif base_model_name == "PlacesNet":
             # 使用 PlacesNet 作为特征提取器
             model = models.alexnet(num_classes=365)
-            # 加载预训练权重
+
             try:
-                # 权重文件路径
-                pretrained_dict = torch.load('weights/alexnet_places365.pth.tar')
-                # 如果权重文件是包含'model'键的字典（如从checkpoint加载）
-                if 'model' in pretrained_dict:
-                    pretrained_dict = pretrained_dict['model']
-                # 加载权重到模型
-                model.load_state_dict(pretrained_dict)
-                print("Successfully loaded PlacesNet pretrained weights")
+                # 加载完整 checkpoint
+                checkpoint = torch.load('weights/alexnet_places365.pth.tar', map_location='cpu')
+                # 提取 state_dict
+                state_dict = checkpoint['state_dict']
+                # 去掉 'module.' 前缀
+                from collections import OrderedDict
+                new_state_dict = OrderedDict()
+                for k, v in state_dict.items():
+                    name = k.replace('module.', '')  # 去除多GPU训练时的 module. 前缀
+                    new_state_dict[name] = v
+                # 加载权重
+                model.load_state_dict(new_state_dict)
+                print("✅ Successfully loaded PlacesNet pretrained weights")
             except Exception as e:
-                print(f"Failed to load pretrained weights: {e}")
-                print("Will use randomly initialized weights instead")
+                print(f"❌ Failed to load pretrained weights: {e}")
+                print("⚠️ Will use randomly initialized weights instead")
+
             self.features = model.features
             self.out_dim = 256  # PlacesNet 特征提取器的输出维度
         else:
@@ -169,11 +175,11 @@ class RSSCNN(nn.Module):
 
 if __name__ == "__main__":
     # 测试模型
-    model = SSCNN(base_model_name="VGG")
+    model = SSCNN(base_model_name="PlacesNet")
     print(model)
     # 查看alexnet的输出维度
     model = models.alexnet(pretrained=True)
     print(model)
     # 测试模型
-    model = RSSCNN(base_model_name="VGG")
+    model = RSSCNN(base_model_name="PlacesNet")
     print(model)

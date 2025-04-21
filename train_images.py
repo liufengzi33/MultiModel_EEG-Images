@@ -26,7 +26,7 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
                 patience=10,
                 device=None,
                 my_dataset=None):
-    train_loader, val_loader = create_dataloaders(my_dataset, train_ratio=0.8, batch_size=batch_size, shuffle=True)
+    train_loader, val_loader = create_dataloaders(my_dataset, batch_size=batch_size, shuffle=True)
     model = SSCNN(base_model_name=model_name).to(device)
     model.device = device
     criterion = nn.CrossEntropyLoss()
@@ -35,14 +35,14 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
 
     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
     best_acc = 0.0
-
+    current_lr = lr
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
         correct = 0
         total = 0
 
-        for left_imgs, right_imgs, _, labels in tqdm(train_loader, desc=f'Epoch {epoch + 1}/{num_epochs}'):
+        for left_imgs, right_imgs, _, _, labels in tqdm(train_loader, desc=f'Epoch {epoch + 1}/{num_epochs}'):
             left_imgs = left_imgs.to(device)
             right_imgs = right_imgs.to(device)
             labels = labels.to(device)
@@ -68,7 +68,14 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
         history['val_loss'].append(val_loss)
         history['val_acc'].append(val_acc)
 
+        # 在调度器step之前保存旧的学习率
+        old_lr = current_lr
         scheduler.step(val_loss)
+        # 获取新的学习率
+        current_lr = optimizer.param_groups[0]['lr']
+        # 检查学习率是否变化
+        if current_lr != old_lr:
+            print(f"学习率更新: {old_lr:.6f} -> {current_lr:.6f}")
 
         # 确保文件夹存在
         os.makedirs(f"outputs/models/sscnn", exist_ok=True)
@@ -114,21 +121,22 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
                  factor=0.1,
                  patience=10,
                  device=None, my_dataset=None):
-    train_loader, val_loader = create_dataloaders(my_dataset, train_ratio=0.8, batch_size=batch_size, shuffle=True)
+    train_loader, val_loader = create_dataloaders(my_dataset, batch_size=batch_size, shuffle=True)
     model = RSSCNN(base_model_name=model_name, lambda_r=lambda_r).to(device)
+    model.device = device
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
     best_acc = 0.0
-
+    current_lr = lr  # 跟踪当前学习率
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
         correct = 0
         total = 0
 
-        for left_imgs, right_imgs, _, labels in tqdm(train_loader, desc=f'Epoch {epoch + 1}/{num_epochs}'):
+        for left_imgs, right_imgs, _, _, labels in tqdm(train_loader, desc=f'Epoch {epoch + 1}/{num_epochs}'):
             left_imgs, right_imgs, labels = left_imgs.to(device), right_imgs.to(device), labels.to(device)
 
             class_out, rank1, rank2 = model(left_imgs, right_imgs)
@@ -153,7 +161,14 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
         history['val_loss'].append(val_loss)
         history['val_acc'].append(val_acc)
 
+        # 在调度器step之前保存旧的学习率
+        old_lr = current_lr
         scheduler.step(val_loss)
+        # 获取新的学习率
+        current_lr = optimizer.param_groups[0]['lr']
+        # 检查学习率是否变化
+        if current_lr != old_lr:
+            print(f"学习率更新: {old_lr:.6f} -> {current_lr:.6f}")
 
         # 确保文件夹存在
         os.makedirs('outputs/models/rsscnn', exist_ok=True)
@@ -264,31 +279,32 @@ def evaluate_rsscnn(model, dataloader, return_preds=False):
 
 
 if __name__ == "__main__":
+    # TODO 编写循环多次训练
     cfg = config.config_image_model.Config()
 
     # 创建数据集
     dataset = MyPP2Dataset(transform=cfg.transform)
 
-    # 训练SSCNN模型  ---已经跑通，没问题
-    print("Training SSCNN with ...", cfg.base_model_name)
-    early_stopper_sscnn = SchedulerEarlyStopper(max_plateaus=cfg.max_lr_plateaus)  # 初始化早停器
-
-    sscnn_model, sscnn_history = train_sscnn(
-        model_name=cfg.base_model_name,
-        num_epochs=cfg.num_epochs,
-        lr=cfg.learning_rate,
-        batch_size=cfg.batch_size,
-        early_stopper=early_stopper_sscnn,
-        device=cfg.device,
-        momentum=cfg.momentum,
-        factor=cfg.factor,
-        patience=cfg.patience,
-        my_dataset=dataset
-    )
-
-    live_plot(sscnn_history,
-              title="SSCNN Training Curve",
-              save_path=f"outputs/training_curve/sscnn/{cfg.base_model_name}/training_curve.png", )
+    # # 训练SSCNN模型  ---已经跑通，没问题
+    # print("Training SSCNN with ...", cfg.base_model_name)
+    # early_stopper_sscnn = SchedulerEarlyStopper(max_plateaus=cfg.max_lr_plateaus)  # 初始化早停器
+    #
+    # sscnn_model, sscnn_history = train_sscnn(
+    #     model_name=cfg.base_model_name,
+    #     num_epochs=cfg.num_epochs,
+    #     lr=cfg.learning_rate,
+    #     batch_size=cfg.batch_size,
+    #     early_stopper=early_stopper_sscnn,
+    #     device=cfg.device,
+    #     momentum=cfg.momentum,
+    #     factor=cfg.factor,
+    #     patience=cfg.patience,
+    #     my_dataset=dataset
+    # )
+    #
+    # live_plot(sscnn_history,
+    #           title="SSCNN Training Curve",
+    #           save_path=f"outputs/training_curve/sscnn/{cfg.base_model_name}/training_curve.png", )
 
     # 训练RSSCNN模型 ---已经跑通，没问题
     print("\nTraining RSSCNN with", cfg.base_model_name)
@@ -308,6 +324,6 @@ if __name__ == "__main__":
         my_dataset=dataset
     )
 
-    live_plot(sscnn_history,
+    live_plot(rsscnn_history,
               title="RSSCNN Training Curve",
-              save_path=f"outputs/training_curve/rsscnn/{cfg.base_model_name}/training_curve.png", )
+              save_path=f"outputs/training_curve/rsscnn/{cfg.base_model_name}/training_curve.png")

@@ -1,12 +1,11 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split, Subset
 import pandas as pd
 from PIL import Image
 import os
 from utils.my_transforms import transform_cnn_2
 
-# TODO 支持多被试训练（multi-subject dataset），可以拓展为合并多个 `MyPP2Dataset` 实例组成 `ConcatDataset` ！！！
 class MyPP2Dataset(Dataset):
     """
     实验数据构造pytorch数据集，读取data/safe_qscores_high2low.xlsx文件 共计300组实验对
@@ -56,9 +55,14 @@ class MyPP2Dataset(Dataset):
         # 读取eeg信号
         eeg_filename = row[self.eeg_col]  # segment_000.npy
         eeg_path = os.path.join(self.eeg_dir, self.subject_id, eeg_filename)
-        eeg_data = np.load(eeg_path)
+        eeg_data = np.load(eeg_path)  # (64, 6000)
+
         # TODO 后续eeg_data可能也需要分成左图和右图对应的eeg 看看要不要转成float32的
-        return left_img, right_img, eeg_data, label
+        # 取左右图呈现期间的 EEG（采样率 1000Hz，2秒各自为2000点）
+        left_eeg = eeg_data[:, 2000:4000].astype(np.float32)  # 2~4秒
+        right_eeg = eeg_data[:, 4000:6000].astype(np.float32)  # 4~6秒
+        # input_eeg = np.concatenate([left_eeg, right_eeg], axis=1).astype(np.float32)  # shape (64, 4000)
+        return left_img, right_img, left_eeg, right_eeg, label
 
     def get_image_by_name(self, image_name):
         # 读取图像
@@ -66,23 +70,24 @@ class MyPP2Dataset(Dataset):
         return Image.open(image_path).convert('RGB')  # 确保转换为RGB
 
 
-def create_dataloaders(dataset, train_ratio=0.8, batch_size=32, shuffle=True):
+def create_dataloaders(dataset, batch_size=4, shuffle=True):
     """
-    创建训练集和测试集的DataLoader
+    创建训练集和测试集的DataLoader，按顺序9:1固定分割（适用于总长度为300的数据集）
     Args:
-        dataset (Dataset): 自定义的PyTorch数据集
-        train_ratio (float): 训练集所占比例，默认0.8
+        dataset (Dataset): 自定义的PyTorch数据集，长度必须为300
         batch_size (int): 批大小
         shuffle (bool): 是否打乱训练集
     Returns:
         train_loader, test_loader: 分别对应训练和测试的DataLoader
     """
-    dataset_size = len(dataset)
-    train_size = int(train_ratio * dataset_size)
-    test_size = dataset_size - train_size
+    assert len(dataset) == 300, "该函数假设数据集长度为300"
 
-    # 划分训练集和测试集
-    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+    # 固定按顺序划分
+    train_indices = list(range(0, 270))
+    test_indices = list(range(270, 300))
+
+    train_dataset = Subset(dataset, train_indices)
+    test_dataset = Subset(dataset, test_indices)
 
     # 构造DataLoader
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle)
@@ -102,14 +107,14 @@ if __name__ == "__main__":
     # idx = np.random.randint(0, len(dataset))
     idx = 0  # 选择第一个样本
     # 获取样本数据
-    left_img, right_img, eeg_data, label = dataset[idx]
+    left_img, right_img, _, _, label = dataset[idx]
 
-    # === 断言 EEG 数据是否与 segment_000.npy 文件一致 ===
-    expected_eeg_path = os.path.join("data/EEG/seg_eeg_data/01gh", "segment_000.npy")
-    expected_eeg = np.load(expected_eeg_path)
-
-    assert np.allclose(eeg_data, expected_eeg), "EEG 数据与 segment_000.npy 不一致！"
-    print("✅ EEG 数据正确无误，与 segment_000.npy 一致。")
+    # # === 断言 EEG 数据是否与 segment_000.npy 文件一致 ===
+    # expected_eeg_path = os.path.join("data/EEG/seg_eeg_data/01gh", "segment_000.npy")
+    # expected_eeg = np.load(expected_eeg_path)
+    #
+    # assert np.allclose(eeg_data, expected_eeg), "EEG 数据与 segment_000.npy 不一致！"
+    # print("✅ EEG 数据正确无误，与 segment_000.npy 一致。")
 
     # 显示图片
     fig, axes = plt.subplots(1, 2, figsize=(8, 4))
