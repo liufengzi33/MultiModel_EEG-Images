@@ -99,11 +99,24 @@ class SSBCINet(nn.Module):
             input_window_samples=input_window_samples,
         )
         self.fusion = EEGFusionNetwork(self.feature_extractor.out_dim)
+        # 初始化权重
+        self._initialize_weights(mean=0.0, variance=0.01)
 
     def forward(self, x1, x2):
         f1 = self.feature_extractor(x1)
         f2 = self.feature_extractor(x2)
         return self.fusion(f1, f2)
+
+    def _initialize_weights(self, mean=0.0, variance=0.01):
+        for m in self.modules():
+            if isinstance(m, nn.Conv1d) or isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=mean, std=variance)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.1)
+            elif isinstance(m, nn.BatchNorm1d) or isinstance(m, nn.BatchNorm2d):
+                # 初始化 BatchNorm 层的权重和偏置
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
 
 
 if __name__ == "__main__":
