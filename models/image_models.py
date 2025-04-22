@@ -121,11 +121,23 @@ class ImageFeatureExtractor(nn.Module):
     """
     封装特征提取器和融合网络，当作后续我的多模态模型的特征提取器
     """
-    def __init__(self, base_model_name):
+
+    def __init__(self, base_model_name, pretrained_rsscnn=None):
         super(ImageFeatureExtractor, self).__init__()
         self.feature_extractor = BaseFeatureExtractor(base_model_name)
         self.fusion_convs = FusionNetwork(self.feature_extractor.out_dim).fusion_convs
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        if pretrained_rsscnn is not None:
+            # 加载预训练模型的权重 ---> 这里需要注意的是，预训练模型的权重需要和当前模型的结构一致 比如都是AlexNet
+            self.load_from_rsscnn(pretrained_rsscnn)
+            print("✅ Successfully loaded pretrained weights")
+
+    def load_from_rsscnn(self, rsscnn_model):
+        # 加载特征提取器权重
+        self.feature_extractor.load_state_dict(rsscnn_model.feature_extractor.state_dict())
+        # 加载融合卷积权重
+        self.fusion_convs.load_state_dict(rsscnn_model.fusion.fusion_convs.state_dict())
 
     def forward(self, x1, x2):
         f1 = self.feature_extractor(x1)
@@ -183,3 +195,9 @@ if __name__ == "__main__":
     # 测试模型
     model = RSSCNN(base_model_name="PlacesNet")
     print(model)
+
+    # 多模态图像特征提取器的使用示例
+    rsscnn = RSSCNN(base_model_name="PlacesNet")
+    rsscnn.load_state_dict(torch.load("rsscnn_weights.pth"))
+
+    image_extractor = ImageFeatureExtractor(base_model_name="PlacesNet", pretrained_rsscnn=rsscnn)

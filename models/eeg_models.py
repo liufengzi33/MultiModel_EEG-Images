@@ -80,7 +80,7 @@ class EEGFusionNetwork(nn.Module):
             nn.Linear(input_dim * 2, 512),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(512, 256)
+            nn.Linear(512, 512) # 因为ImageModel的输出是512，所以这里也设置为512
         )
 
     def forward(self, f1, f2):
@@ -128,4 +128,4 @@ if __name__ == "__main__":
     x1 = torch.randn(8, 64, 2000)  # 假设 EEG 信号的形状为 [batch_size, channels, time]
     x2 = torch.randn(8, 64, 2000)
     output = model(x1, x2)
-    print(output.shape)  # 输出形状应该是 [8, 256]
+    print(output.shape)  # 输出形状应该是 [8, 512]
