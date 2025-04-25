@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
-from torch.utils.data import Dataset, DataLoader, random_split, Subset,ConcatDataset
+from torch.utils.data import Dataset, DataLoader, random_split, Subset, ConcatDataset
 import pandas as pd
 from PIL import Image
 import os
@@ -70,11 +70,38 @@ class MyPP2Dataset(Dataset):
 
     def get_image_by_name(self, image_name):
         # 读取图像
+        # 替换反斜杠为正斜杠  --linux /   windows \
+        image_name = image_name.replace("\\", "/")
         image_path = os.path.join(self.img_dir, image_name)
         return Image.open(image_path).convert('RGB')  # 确保转换为RGB
 
 
-def create_dataloaders(dataset, batch_size=4, shuffle=True):
+def create_dataloaders(dataset, train_ratio=0.8, batch_size=4, shuffle=True):
+    """
+    创建训练集和测试集的DataLoader
+    Args:
+        dataset (Dataset): 自定义的PyTorch数据集
+        train_ratio (float): 训练集所占比例，默认0.8
+        batch_size (int): 批大小
+        shuffle (bool): 是否打乱训练集
+    Returns:
+        train_loader, test_loader: 分别对应训练和测试的DataLoader
+    """
+    dataset_size = len(dataset)
+    train_size = int(train_ratio * dataset_size)
+    test_size = dataset_size - train_size
+
+    # 划分训练集和测试集
+    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+
+    # 构造DataLoader
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, test_loader
+
+
+def create_dataloaders_by_order(dataset, batch_size=4, shuffle=True):
     """
     创建训练集和测试集的DataLoader，按顺序9:1固定分割（适用于总长度为300的数据集）,适用于单图像或者单脑电的训练
     Args:

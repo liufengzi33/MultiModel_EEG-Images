@@ -17,7 +17,7 @@ class Config:
         self.max_lr_plateaus = 5  # 最多衰减5次
 
         # 模型与路径设置
-        self.base_model_name = 'VGG'
+        self.base_model_name = 'VGG'  # AlexNet, VGG, PlacesNet
         # self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.device = 'cpu'
 
