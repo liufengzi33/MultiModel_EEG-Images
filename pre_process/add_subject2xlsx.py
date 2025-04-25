@@ -21,7 +21,7 @@ def add_subject_to_xlsx(xlsx_filename, subject_id):
     df.to_excel(xlsx_filename, index=False)  # 可改名保存
 
 if __name__ == '__main__':
-    subjects_list = ['01gh', '02szy', '03ysq', '04whx', '05ly']
+    subjects_list = ['01gh', '02szy', '03ysq', '04whx', '05ly', '06wrl', '07lxy']
     xlsx_filename = "../data/safe_qscores_high2low.xlsx"  # 修改为你的xlsx文件名
     for subject in subjects_list:
         add_subject_to_xlsx(xlsx_filename, subject)

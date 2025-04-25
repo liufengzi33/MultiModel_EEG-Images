@@ -17,7 +17,7 @@ def segment_eeg_data_to_local(eeg_data, save_dir):
         np.save(os.path.join(save_dir, f"segment_{i:03d}.npy"), segment)
 
 if __name__ == '__main__':
-    subjects_list = ['01gh', '02szy', '03ysq', '04whx', '05ly']
+    subjects_list = ['01gh', '02szy', '03ysq', '04whx', '05ly', '06wrl', '07lxy']
     for subject in  subjects_list:
         # 读取EEG数据
         eeg_data_path = f"../data/EEG/raw_eeg_npy/{subject}.npy"
