@@ -217,7 +217,7 @@ def evaluate_sscnn(model, dataloader, criterion, return_preds=False):
     all_preds = []
 
     with torch.no_grad():
-        for left_imgs, right_imgs, _, labels in dataloader:
+        for left_imgs, right_imgs, _, _, labels in dataloader:
             left_imgs = left_imgs.to(model.device)
             right_imgs = right_imgs.to(model.device)
             labels = labels.to(model.device)
@@ -253,7 +253,7 @@ def evaluate_rsscnn(model, dataloader, return_preds=False):
     all_preds = []
 
     with torch.no_grad():
-        for left_imgs, right_imgs, _, labels in dataloader:
+        for left_imgs, right_imgs, _, _, labels in dataloader:
             left_imgs = left_imgs.to(model.device)
             right_imgs = right_imgs.to(model.device)
             labels = labels.to(model.device)
