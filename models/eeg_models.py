@@ -6,7 +6,7 @@ from braindecode.models import EEGNetv1, ShallowFBCSPNet, EEGNetv4
 class EEGFeatureExtractor(nn.Module):
     def __init__(self, model_name="EEGNet", in_chans=64, n_classes=2, input_window_samples=2000):
         super(EEGFeatureExtractor, self).__init__()
-
+        # TODO 后续加上EEGNetv4模型,这个是EEGNetv1
         if model_name == "EEGNet":
             full_model = EEGNetv1(
                 n_classes=n_classes,
@@ -69,23 +69,23 @@ class EEGFeatureExtractor(nn.Module):
 
     def forward(self, x):
         out = self.feature_net(x)
-        return out.view(out.size(0), -1)  # 展平为 [B, out_dim]
+        return out.reshape(out.size(0), -1)  # 展平为 [B, out_dim]
 
 
 
 class EEGFusionNetwork(nn.Module):
     def __init__(self, input_dim):
         super(EEGFusionNetwork, self).__init__()
-        self.classifier = nn.Sequential(
-            nn.Linear(input_dim * 2, 512),
+        self.fusion = nn.Sequential(
+            nn.Linear(input_dim * 2, 1024),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(512, 512) # 因为ImageModel的输出是512，所以这里也设置为512
+            nn.Linear(1024, 512) # 因为ImageModel的输出是512，所以这里也设置为512
         )
 
     def forward(self, f1, f2):
         fused = torch.cat([f1, f2], dim=1)
-        return self.classifier(fused)
+        return self.fusion(fused)
 
 
 # 整个SSBCI模型都是后续多模态模型的特征提取器
@@ -99,13 +99,27 @@ class SSBCINet(nn.Module):
             input_window_samples=input_window_samples,
         )
         self.fusion = EEGFusionNetwork(self.feature_extractor.out_dim)
+        # 分类器，单独训练eeg的时候用，后续多模态训练的时候去掉
+        self.classifier = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            # 二分类输出一个值
+            nn.Linear(128, 1),
+        )
         # 初始化权重
         self._initialize_weights(mean=0.0, variance=0.01)
 
     def forward(self, x1, x2):
         f1 = self.feature_extractor(x1)
         f2 = self.feature_extractor(x2)
-        return self.fusion(f1, f2)
+        fused_features = self.fusion(f1, f2)
+        logits = self.classifier(fused_features)
+        # 二分类返回squeeze
+        return logits.squeeze()
 
     def _initialize_weights(self, mean=0.0, variance=0.01):
         for m in self.modules():
@@ -121,9 +135,9 @@ class SSBCINet(nn.Module):
 
 if __name__ == "__main__":
     # 测试模型
-    # model = ShallowFBCSPNet(input_window_samples=200, in_chans=64, n_classes=2)
-    # print(model)
-    model = SSBCINet(base_model_name="ShallowFBCSPNet", in_chans=64, n_classes=2, input_window_samples=2000)
+    model = ShallowFBCSPNet(input_window_samples=200, in_chans=64, n_classes=2)
+    print(model)
+    model = SSBCINet(base_model_name="EEGNet", in_chans=64, n_classes=2, input_window_samples=2000)
     print(model)
     x1 = torch.randn(8, 64, 2000)  # 假设 EEG 信号的形状为 [batch_size, channels, time]
     x2 = torch.randn(8, 64, 2000)
