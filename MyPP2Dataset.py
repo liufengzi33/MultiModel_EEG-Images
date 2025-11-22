@@ -59,6 +59,11 @@ class MyPP2Dataset(Dataset):
         eeg_path = os.path.join(self.eeg_dir, self.subject_id, eeg_filename)
         eeg_data = np.load(eeg_path)  # (64, 6000)
 
+        # EEG时间段说明（采样率1000Hz）：
+        # 0-2秒: 基线
+        # 2-4秒: 第一张图像呈现期间（翻转前为左图，翻转后为右图）
+        # 4-6秒: 第二张图像呈现期间（翻转前为右图，翻转后为左图）
+
         # 取左右图呈现期间的 EEG（采样率 1000Hz，2秒各自为2000点）
         left_eeg = eeg_data[:, 2000:4000].astype(np.float32)  # 2~4秒
         right_eeg = eeg_data[:, 4000:6000].astype(np.float32)  # 4~6秒
