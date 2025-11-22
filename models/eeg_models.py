@@ -80,7 +80,8 @@ class EEGFusionNetwork(nn.Module):
             nn.Linear(input_dim * 2, 1024),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(1024, 512) # 因为ImageModel的输出是512，所以这里也设置为512
+            nn.Linear(1024, 512), # 因为ImageModel的输出是512，所以这里也设置为512
+            nn.ReLU(),
         )
 
     def forward(self, f1, f2):
