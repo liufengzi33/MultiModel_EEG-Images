@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import os
 from utils.model_loader import ModelLoader
 
@@ -8,34 +9,31 @@ class MultiModalFusionNetwork(nn.Module):
     def __init__(self,
                  eeg_model_name="EEGNet",
                  image_model_name="PlacesNet",
-                 image_model_type="rsscnn",  # "rsscnn" 或 "sscnn"
+                 image_model_type="rsscnn",
                  in_chans=64,
                  n_classes=2,
                  input_window_samples=2000,
                  use_pretrained_eeg=True,
                  use_pretrained_image=True,
                  base_path="outputs",
-                 fusion_dim=512,
+                 common_dim=512,
+                 private_dim=256,
                  dropout_rate=0.5,
-                 fusion_method="concatenate"):
+                 alpha=0.5,  # 公共损失权重
+                 beta=0.5):  # 私有损失权重
         """
-        多模态融合网络
+        改进的多模态融合网络 - 基于脑机耦合学习思想
 
         Args:
-            eeg_model_name: EEG模型名称 ("EEGNet" 或 "ShallowFBCSPNet")
-            image_model_name: 图像基础模型名称 ("AlexNet", "VGG", 或 "PlacesNet")
-            image_model_type: 图像模型类型 ("rsscnn" 或 "sscnn")
-            in_chans: EEG输入通道数
-            n_classes: 分类类别数
-            input_window_samples: EEG输入时间点数
-            use_pretrained_eeg: 是否使用预训练的EEG模型
-            use_pretrained_image: 是否使用预训练的图像模型
-            base_path: 模型保存的基础路径
-            fusion_dim: 融合特征维度
-            dropout_rate: dropout率
-            fusion_method: 融合方法 ("concatenate", "add", "weighted")
+            common_dim: 公共特征维度
+            private_dim: 私有特征维度
+            alpha: 公共通道相似性损失权重
+            beta: 私有通道差异性损失权重
         """
         super(MultiModalFusionNetwork, self).__init__()
+
+        self.alpha = alpha
+        self.beta = beta
 
         # 初始化模型加载器
         self.model_loader = ModelLoader(base_path)
@@ -74,35 +72,36 @@ class MultiModalFusionNetwork(nn.Module):
             image_model_type=image_model_type
         )
 
-        # 特征投影层
-        self.eeg_projection = nn.Sequential(
-            nn.Linear(self.eeg_feature_net.out_dim, fusion_dim),
+        # 公共通道编码器 (共享参数)
+        self.common_encoder = nn.Sequential(
+            nn.Linear(self.eeg_feature_net.out_dim, common_dim),
             nn.ReLU(),
-            nn.Dropout(dropout_rate)
+            nn.Dropout(dropout_rate),
+            nn.Linear(common_dim, common_dim),
+            nn.ReLU()
         )
 
-        self.image_projection = nn.Sequential(
-            nn.Linear(self.image_feature_net.out_dim, fusion_dim),
+        # 私有通道编码器 (每个模态独立)
+        self.eeg_private_encoder = nn.Sequential(
+            nn.Linear(self.eeg_feature_net.out_dim, private_dim),
             nn.ReLU(),
-            nn.Dropout(dropout_rate)
+            nn.Dropout(dropout_rate),
+            nn.Linear(private_dim, private_dim),
+            nn.ReLU()
         )
 
-        # 多模态融合配置
-        self.fusion_method = fusion_method
-
-        if self.fusion_method == "concatenate":
-            fusion_input_dim = fusion_dim * 2
-        elif self.fusion_method == "add":
-            fusion_input_dim = fusion_dim
-        elif self.fusion_method == "weighted":
-            self.attention_fusion = CrossModalAttention(fusion_dim)
-            fusion_input_dim = fusion_dim
-        else:
-            raise ValueError(f"不支持的融合方法: {fusion_method}")
+        self.image_private_encoder = nn.Sequential(
+            nn.Linear(self.image_feature_net.out_dim, private_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(private_dim, private_dim),
+            nn.ReLU()
+        )
 
         # 分类器
+        fusion_dim = common_dim + private_dim * 2  # 公共特征 + EEG私有特征 + 图像私有特征
         self.classifier = nn.Sequential(
-            nn.Linear(fusion_input_dim, 256),
+            nn.Linear(fusion_dim, 256),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
             nn.Linear(256, 128),
@@ -111,7 +110,7 @@ class MultiModalFusionNetwork(nn.Module):
             nn.Linear(128, n_classes if n_classes > 2 else 1)
         )
 
-        # 初始化权重（只初始化新添加的层）
+        # 初始化权重
         self._initialize_weights()
 
     def _build_eeg_path(self, eeg_model_name, in_chans, n_classes, input_window_samples, pretrained_ssbcinet):
@@ -132,14 +131,12 @@ class MultiModalFusionNetwork(nn.Module):
                 return fused
 
         if pretrained_ssbcinet is not None:
-            # 使用预训练的SSBCINet
             print("✅ 使用预训练的SSBCINet初始化EEG通路")
             feature_extractor = pretrained_ssbcinet.feature_extractor
             fusion_net = pretrained_ssbcinet.fusion
-            out_dim = 512  # SSBCINet fusion输出维度
+            out_dim = 512
             print("  ✅ 成功加载了脑电通路初始化权重")
         else:
-            # 随机初始化
             print("🔄 随机初始化EEG通路")
             feature_extractor = EEGFeatureExtractor(
                 model_name=eeg_model_name,
@@ -148,7 +145,7 @@ class MultiModalFusionNetwork(nn.Module):
                 input_window_samples=input_window_samples,
             )
             fusion_net = EEGFusionNetwork(feature_extractor.out_dim)
-            out_dim = 512  # EEGFusionNetwork输出维度
+            out_dim = 512
 
         return EEGFeaturePath(feature_extractor, fusion_net, out_dim)
 
@@ -157,14 +154,12 @@ class MultiModalFusionNetwork(nn.Module):
         from image_models import ImageFeatureExtractor
 
         if pretrained_image_model is not None:
-            # 使用预训练的图像模型
             print(f"✅ 使用预训练的{image_model_type.upper()}初始化图像通路")
             return ImageFeatureExtractor(
                 base_model_name=image_model_name,
                 pretrained_rsscnn=pretrained_image_model
             )
         else:
-            # 随机初始化
             print("🔄 随机初始化图像通路")
             return ImageFeatureExtractor(
                 base_model_name=image_model_name,
@@ -174,131 +169,134 @@ class MultiModalFusionNetwork(nn.Module):
     def forward(self, eeg1, eeg2, img1, img2):
         """
         前向传播
+        Returns:
+            logits: 分类输出
+            eeg_common: EEG公共特征
+            image_common: 图像公共特征
+            eeg_private: EEG私有特征
+            image_private: 图像私有特征
         """
-        # 提取EEG特征
-        eeg_features = self.eeg_feature_net(eeg1, eeg2)
-        eeg_features = self.eeg_projection(eeg_features)
+        # 提取基础特征
+        eeg_base_features = self.eeg_feature_net(eeg1, eeg2)
+        image_base_features = self.image_feature_net(img1, img2)
 
-        # 提取图像特征
-        image_features = self.image_feature_net(img1, img2)
-        image_features = self.image_projection(image_features)
+        # 公共通道特征
+        eeg_common = self.common_encoder(eeg_base_features)
+        image_common = self.common_encoder(image_base_features)
 
-        # 多模态融合
-        if self.fusion_method == "concatenate":
-            fused_features = torch.cat([eeg_features, image_features], dim=1)
-        elif self.fusion_method == "add":
-            fused_features = eeg_features + image_features
-        elif self.fusion_method == "weighted":
-            fused_features = self.attention_fusion(eeg_features, image_features)
+        # 私有通道特征
+        eeg_private = self.eeg_private_encoder(eeg_base_features)
+        image_private = self.image_private_encoder(image_base_features)
+
+        # 特征融合: 公共特征 + EEG私有特征 + 图像私有特征
+        fused_features = torch.cat([eeg_common, eeg_private, image_private], dim=1)
 
         # 分类
         logits = self.classifier(fused_features)
 
         if logits.shape[1] == 1:
-            return logits.squeeze()  # 二分类
-        else:
-            return logits  # 多分类
+            logits = logits.squeeze()  # 二分类
+
+        return logits, eeg_common, image_common, eeg_private, image_private
+
+    def compute_loss(self, eeg_common, image_common, eeg_private, image_private, logits, targets):
+        """
+        计算总损失，包含三个部分：
+        1. 分类损失
+        2. 公共通道相似性损失
+        3. 私有通道差异性损失
+        """
+        # 1. 分类损失
+        if logits.dim() == 1:  # 二分类
+            task_loss = F.binary_cross_entropy_with_logits(logits, targets.float())
+        else:  # 多分类
+            task_loss = F.cross_entropy(logits, targets)
+
+        # 2. 公共通道相似性损失 (使用CMD距离)
+        common_sim_loss = self.cmd_loss(eeg_common, image_common, K=3)
+
+        # 3. 私有通道差异性损失
+        private_diff_loss = self.orthogonality_loss(eeg_common, eeg_private, image_common, image_private)
+
+        # 总损失
+        total_loss = task_loss + self.alpha * common_sim_loss + self.beta * private_diff_loss
+
+        return {
+            'total_loss': total_loss,
+            'task_loss': task_loss,
+            'common_sim_loss': common_sim_loss,
+            'private_diff_loss': private_diff_loss
+        }
+
+    def cmd_loss(self, X, Y, K=3):
+        """
+        中心矩差异损失 (Central Moment Discrepancy)
+        论文中使用的距离度量方法
+        """
+        # 一阶矩 (均值)
+        x_mean = torch.mean(X, 0)
+        y_mean = torch.mean(Y, 0)
+        moment_diff = torch.norm(x_mean - y_mean, 2)
+
+        # 高阶矩 (2到K阶)
+        for k in range(2, K + 1):
+            x_moment = torch.mean((X - x_mean) ** k, 0)
+            y_moment = torch.mean((Y - y_mean) ** k, 0)
+            moment_diff += torch.norm(x_moment - y_moment, 2)
+
+        return moment_diff
+
+    def orthogonality_loss(self, eeg_common, eeg_private, image_common, image_private):
+        """
+        正交性损失，确保私有特征与公共特征以及跨模态私有特征之间的差异性
+        """
+        batch_size = eeg_common.size(0)
+
+        # 同一模态内公共特征与私有特征的正交性
+        eeg_orth_loss = torch.norm(torch.mm(eeg_common.t(), eeg_private), p='fro') ** 2
+        image_orth_loss = torch.norm(torch.mm(image_common.t(), image_private), p='fro') ** 2
+
+        # 跨模态私有特征之间的正交性
+        cross_orth_loss = torch.norm(torch.mm(eeg_private.t(), image_private), p='fro') ** 2
+
+        return (eeg_orth_loss + image_orth_loss + cross_orth_loss) / batch_size
 
     def _initialize_weights(self):
-        """只初始化新添加的层（投影层和分类器）"""
+        """初始化权重"""
         for m in self.modules():
-            if (isinstance(m, nn.Linear) and
-                    m in [layer for layer in self.eeg_projection.modules()] +
-                    [layer for layer in self.image_projection.modules()] +
-                    [layer for layer in self.classifier.modules()]):
+            if isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, mean=0.0, std=0.01)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0.1)
 
 
-class CrossModalAttention(nn.Module):
-    """跨模态注意力融合模块"""
-
-    def __init__(self, feature_dim):
-        super(CrossModalAttention, self).__init__()
-        self.feature_dim = feature_dim
-
-        # 注意力权重计算
-        self.eeg_attention = nn.Sequential(
-            nn.Linear(feature_dim, feature_dim // 2),
-            nn.ReLU(),
-            nn.Linear(feature_dim // 2, 1),
-            nn.Sigmoid()
-        )
-
-        self.image_attention = nn.Sequential(
-            nn.Linear(feature_dim, feature_dim // 2),
-            nn.ReLU(),
-            nn.Linear(feature_dim // 2, 1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, eeg_features, image_features):
-        # 计算注意力权重
-        eeg_weights = self.eeg_attention(eeg_features)
-        image_weights = self.image_attention(image_features)
-
-        # 归一化权重
-        total_weights = eeg_weights + image_weights + 1e-8
-        eeg_weights = eeg_weights / total_weights
-        image_weights = image_weights / total_weights
-
-        # 加权融合
-        fused_features = eeg_weights * eeg_features + image_weights * image_features
-
-        return fused_features
-
-
+# 测试修改后的网络
 if __name__ == "__main__":
+    print("=== 测试改进的多模态网络 ===")
 
-    # 测试模型加载和初始化
-
-    print("=== 检查可用模型 ===")
-    loader = ModelLoader()
-    available = loader.get_available_models()
-    print("可用EEG模型:", available["eeg_models"])
-    print("可用RSSCNN模型:", available["image_models"]["rsscnn"])
-    print("可用SSCNN模型:", available["image_models"]["sscnn"])
-
-    print("\n=== 测试多模态网络 ===")
-
-    # 测试1: 使用预训练模型（如果存在）
-    if available["eeg_models"] and available["image_models"]["rsscnn"]:
-        eeg_model = available["eeg_models"][0]
-        image_model = available["image_models"]["rsscnn"][0]
-
-        print(f"使用 {eeg_model} + RSSCNN-{image_model}")
-
-        model = MultiModalFusionNetwork(
-            eeg_model_name=eeg_model,
-            image_model_name=image_model,
-            image_model_type="rsscnn",
-            use_pretrained_eeg=True,
-            use_pretrained_image=True
-        )
-
-        model_sscnn = MultiModalFusionNetwork(
-            eeg_model_name=eeg_model,
-            image_model_name=image_model,
-            image_model_type="sscnn",
-            use_pretrained_eeg=True,
-            use_pretrained_image=True
-        )
-
-        # 测试前向传播
-        eeg1 = torch.randn(2, 64, 2000)
-        eeg2 = torch.randn(2, 64, 2000)
-        img1 = torch.randn(2, 3, 224, 224)
-        img2 = torch.randn(2, 3, 224, 224)
-
-        output = model(eeg1, eeg2, img1, img2)
-        print(f"输出形状: {output.shape}")
-
-    # 测试2: 随机初始化
-    print("\n=== 测试随机初始化 ===")
-    model_random = MultiModalFusionNetwork(
+    model = MultiModalFusionNetwork(
         use_pretrained_eeg=False,
         use_pretrained_image=False
     )
-    output_random = model_random(eeg1, eeg2, img1, img2)
-    print(f"随机初始化输出形状: {output_random.shape}")
+
+    # 测试输入
+    eeg1 = torch.randn(2, 64, 2000)
+    eeg2 = torch.randn(2, 64, 2000)
+    img1 = torch.randn(2, 3, 224, 224)
+    img2 = torch.randn(2, 3, 224, 224)
+    targets = torch.tensor([0, 1])  # 二分类标签
+
+    # 前向传播
+    logits, eeg_common, image_common, eeg_private, image_private = model(eeg1, eeg2, img1, img2)
+
+    print(f"输出logits形状: {logits.shape}")
+    print(f"EEG公共特征形状: {eeg_common.shape}")
+    print(f"图像公共特征形状: {image_common.shape}")
+    print(f"EEG私有特征形状: {eeg_private.shape}")
+    print(f"图像私有特征形状: {image_private.shape}")
+
+    # 计算损失
+    losses = model.compute_loss(eeg_common, image_common, eeg_private, image_private, logits, targets)
+
+    for loss_name, loss_value in losses.items():
+        print(f"{loss_name}: {loss_value.item():.4f}")
