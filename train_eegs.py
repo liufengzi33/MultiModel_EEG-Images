@@ -16,7 +16,6 @@ from utils.my_transforms import transform_cnn_2
 class EEGTrainer:
     def __init__(self, model, train_loader, val_loader, device='cuda',
                  lr=1e-4,
-                 momentum=0.9,
                  weight_decay=1e-4,
                  patience=5,
                  factor=0.1,
@@ -43,9 +42,9 @@ class EEGTrainer:
 
         # 损失函数和优化器
         self.criterion = nn.BCEWithLogitsLoss()
-        self.optimizer = optim.SGD(model.parameters(), lr=lr,momentum=momentum ,weight_decay=weight_decay)
+        self.optimizer = optim.Adam(model.parameters(), lr=lr,weight_decay=weight_decay)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', patience=patience,
-                                                              factor=factor)
+                                                              factor=factor, verbose=True)
 
         # 使用SchedulerEarlyStopper
         self.early_stopper = SchedulerEarlyStopper(max_plateaus=max_plateaus)
@@ -333,7 +332,6 @@ def main():
         val_loader,
         device=cfg.device,
         lr=cfg.learning_rate,
-        momentum=cfg.momentum,
         weight_decay=cfg.weight_decay,
         patience=cfg.patience,
         factor=cfg.factor,

@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -23,7 +25,8 @@ class BaseFeatureExtractor(nn.Module):
 
             try:
                 # 加载完整 checkpoint
-                checkpoint = torch.load('weights/alexnet_places365.pth.tar', map_location='cpu')
+                weights_path = os.path.join('../weights/alexnet_places365.pth.tar')
+                checkpoint = torch.load(weights_path, map_location='cpu')
                 # 提取 state_dict
                 state_dict = checkpoint['state_dict']
                 # 去掉 'module.' 前缀
@@ -128,10 +131,13 @@ class ImageFeatureExtractor(nn.Module):
         self.fusion_convs = FusionNetwork(self.feature_extractor.out_dim).fusion_convs
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
 
+        # 添加 out_dim 属性
+        self.out_dim = 512  # FusionNetwork.fusion_convs 的输出通道数
+
         if pretrained_rsscnn is not None:
-            # 加载预训练模型的权重 ---> 这里需要注意的是，预训练模型的权重需要和当前模型的结构一致 比如都是AlexNet
+            # 加载预训练模型的权重
             self.load_from_rsscnn(pretrained_rsscnn)
-            print("✅ Successfully loaded pretrained weights")
+            print("  ✅ 成功加载了图像通路初始化权重")
 
     def load_from_rsscnn(self, rsscnn_model):
         # 加载特征提取器权重
