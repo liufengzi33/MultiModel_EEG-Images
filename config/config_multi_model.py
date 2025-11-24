@@ -7,12 +7,7 @@ class Config:
         self.subject_id = "01gh"
         # 通用训练参数
         self.batch_size = 16
-        self.num_epochs = 4000
-        self.learning_rate = 1e-3
-        self.momentum = 0.9
         self.weight_decay = 1e-4
-        self.factor = 0.5
-        self.patience = 20
         self.alpha = 0.5
         self.beta = 0.5
         self.transform = transform_cnn_2

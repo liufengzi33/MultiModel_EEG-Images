@@ -133,7 +133,7 @@ class MultiStageTrainer:
         if backbone_params:
             param_groups.append({'params': backbone_params, 'lr': lr_backbone})
 
-        optimizer = torch.optim.AdamW(param_groups, weight_decay=1e-4)
+        optimizer = torch.optim.AdamW(param_groups, weight_decay=self.config.weight_decay)
 
         print(f"🔧 优化器: head_lr={lr_head}, backbone_lr={lr_backbone}")
         print(f"   可训练参数: head={len(head_params)}组, backbone={len(backbone_params)}组")
