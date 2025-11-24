@@ -16,7 +16,7 @@ class ModelLoader:
             self.base_path = os.path.join(project_root, base_path)
 
         # 直接使用正确的路径结构
-        self.image_model_path = os.path.join(self.base_path, "outputs_images", "models")
+        self.image_model_path = os.path.join(self.base_path, "outputs_images", "best_models")
         self.eeg_model_path = os.path.join(self.base_path, "outputs_eeg")
 
         print(f"🔍 ModelLoader 初始化:")

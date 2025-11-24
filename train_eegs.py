@@ -28,21 +28,23 @@ class EEGTrainer:
         self.device = device
 
         # 根据基础模型名称创建输出目录
-        self.output_base_dir = output_base_dir
-        self.model_output_dir = os.path.join(output_base_dir, base_model_name, "models")
-        self.plot_output_dir = os.path.join(output_base_dir, base_model_name, "plots")
+        self.output_base_dir = os.path.join(output_base_dir, base_model_name)
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # 保存为实例变量
+        self.model_output_dir = os.path.join(self.output_base_dir, self.timestamp, "models")
+        self.plot_output_dir = os.path.join(self.output_base_dir, self.timestamp, "plots")
 
         # 创建目录
         os.makedirs(self.model_output_dir, exist_ok=True)
         os.makedirs(self.plot_output_dir, exist_ok=True)
 
         print(f"Output directories created:")
+        print(f"  - Base: {self.output_base_dir}")
         print(f"  - Models: {self.model_output_dir}")
         print(f"  - Plots: {self.plot_output_dir}")
 
         # 损失函数和优化器
         self.criterion = nn.BCEWithLogitsLoss()
-        self.optimizer = optim.Adam(model.parameters(), lr=lr,weight_decay=weight_decay)
+        self.optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', patience=patience,
                                                               factor=factor, verbose=True)
 
@@ -130,7 +132,6 @@ class EEGTrainer:
         print(f"Output base directory: {self.output_base_dir}")
 
         best_val_acc = 0.0
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         for epoch in range(epochs):
             print(f'\nEpoch {epoch + 1}/{epochs}')
@@ -163,7 +164,7 @@ class EEGTrainer:
             # 保存最佳模型
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
-                model_path = os.path.join(self.model_output_dir, f'best_{self.base_model_name}_model_{timestamp}.pth')
+                model_path = os.path.join(self.model_output_dir, f'best_model.pth')  # 简化文件名
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': self.model.state_dict(),
@@ -172,7 +173,7 @@ class EEGTrainer:
                     'val_acc': val_acc,
                     'val_loss': val_loss,
                     'plateau_count': self.early_stopper.plateau_count,
-                    'timestamp': timestamp,
+                    'timestamp': self.timestamp,
                     'base_model_name': self.base_model_name,
                     'config': {
                         'learning_rate': self.optimizer.param_groups[0]['lr'],
@@ -184,8 +185,7 @@ class EEGTrainer:
 
             # 每10个epoch保存一次检查点
             if (epoch + 1) % 10 == 0:
-                checkpoint_path = os.path.join(self.model_output_dir,
-                                               f'checkpoint_{self.base_model_name}_epoch_{epoch + 1}_{timestamp}.pth')
+                checkpoint_path = os.path.join(self.model_output_dir, f'checkpoint_epoch_{epoch + 1}.pth')
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': self.model.state_dict(),
@@ -195,7 +195,7 @@ class EEGTrainer:
                     'val_loss': val_loss,
                     'train_acc': train_acc,
                     'val_acc': val_acc,
-                    'timestamp': timestamp,
+                    'timestamp': self.timestamp,
                     'base_model_name': self.base_model_name
                 }, checkpoint_path)
                 print(f'Checkpoint saved at {checkpoint_path}')
@@ -207,7 +207,7 @@ class EEGTrainer:
                 break
 
         # 训练结束后保存最终模型
-        final_model_path = os.path.join(self.model_output_dir, f'final_{self.base_model_name}_model_{timestamp}.pth')
+        final_model_path = os.path.join(self.model_output_dir, 'final_model.pth')
         torch.save({
             'epoch': epochs,
             'model_state_dict': self.model.state_dict(),
@@ -217,7 +217,7 @@ class EEGTrainer:
             'val_loss': val_loss,
             'train_acc': train_acc,
             'val_acc': val_acc,
-            'timestamp': timestamp,
+            'timestamp': self.timestamp,
             'base_model_name': self.base_model_name,
             'training_history': {
                 'train_losses': self.train_losses,
@@ -230,11 +230,11 @@ class EEGTrainer:
         print(f'Final model saved at {final_model_path}')
 
         # 绘制训练曲线
-        self.plot_training_curves(timestamp)
+        self.plot_training_curves()
 
         return best_val_acc
 
-    def plot_training_curves(self, timestamp):
+    def plot_training_curves(self):
         plt.figure(figsize=(15, 5))
 
         # 损失曲线
@@ -257,29 +257,19 @@ class EEGTrainer:
         plt.title(f'{self.base_model_name} - Training and Validation Accuracy')
         plt.grid(True, alpha=0.45)
 
-        # 学习率曲线
-        # plt.subplot(1, 3, 3)
-        # plt.plot(self.learning_rates, label='Learning Rate', color='red', linewidth=2)
-        # plt.xlabel('Epoch')
-        # plt.ylabel('Learning Rate')
-        # plt.legend()
-        # plt.title(f'{self.base_model_name} - Learning Rate Schedule')
-        # plt.yscale('log')
-        # plt.grid(True, alpha=0.3)
-
         plt.tight_layout()
 
         # 保存图像
-        plot_path = os.path.join(self.plot_output_dir, f'training_curves_{self.base_model_name}_{timestamp}.png')
+        plot_path = os.path.join(self.plot_output_dir, 'training_curves.png')
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         print(f'Training curves saved at {plot_path}')
         plt.show()
 
         # 保存训练数据为文本文件
-        data_path = os.path.join(self.plot_output_dir, f'training_data_{self.base_model_name}_{timestamp}.txt')
+        data_path = os.path.join(self.plot_output_dir, 'training_data.txt')
         with open(data_path, 'w') as f:
             f.write(f"# Training Data for {self.base_model_name}\n")
-            f.write(f"# Timestamp: {timestamp}\n")
+            f.write(f"# Timestamp: {self.timestamp}\n")
             f.write(f"# Best Validation Accuracy: {max(self.val_accuracies):.2f}%\n")
             f.write("Epoch,Train_Loss,Val_Loss,Train_Acc,Val_Acc,Learning_Rate\n")
             for i in range(len(self.train_losses)):
@@ -343,19 +333,17 @@ def main():
 
     print(f"\nTraining completed! Best validation accuracy: {best_acc:.2f}%")
 
-    # 加载最佳模型进行测试
-    model_dir = os.path.join("outputs/outputs_eeg", cfg.base_model_name, "models")
-    model_files = [f for f in os.listdir(model_dir) if f.startswith(f"best_{cfg.base_model_name}_model_")]
-    if model_files:
-        latest_model = sorted(model_files)[-1]
-        checkpoint_path = os.path.join(model_dir, latest_model)
-        checkpoint = torch.load(checkpoint_path)
+    # 修正：从正确的路径加载最佳模型
+    best_model_path = os.path.join(trainer.model_output_dir, 'best_model.pth')
+    if os.path.exists(best_model_path):
+        checkpoint = torch.load(best_model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
-        print(f"Best model loaded from {checkpoint_path} for inference.")
+        print(f"Best model loaded from {best_model_path} for inference.")
         print(f"Best validation accuracy: {checkpoint['val_acc']:.2f}%")
         print(f"Base model: {checkpoint.get('base_model_name', 'Unknown')}")
+        print(f"Training timestamp: {checkpoint.get('timestamp', 'Unknown')}")
     else:
-        print("No best model found!")
+        print(f"No best model found at {best_model_path}!")
 
 
 if __name__ == "__main__":

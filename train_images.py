@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from matplotlib import pyplot as plt
+import json
+import pandas as pd
+from datetime import datetime
 
 import config.config_image_model
 from MyPP2Dataset import MyPP2Dataset, create_dataloaders, create_subject_dataloaders
@@ -13,9 +16,44 @@ from tqdm import tqdm
 from utils.early_stop import SchedulerEarlyStopper
 
 
-# 设置随机种子保证可重复性
-# torch.manual_seed(42)
-# np.random.seed(42)
+class ImageModelTrainer:
+    def __init__(self, model_type, base_model_name, timestamp):
+        """
+        图像模型训练器基类
+
+        Args:
+            model_type: 模型类型 ('sscnn' 或 'rsscnn')
+            base_model_name: 基础模型名称
+            timestamp: 时间戳
+        """
+        self.model_type = model_type
+        self.base_model_name = base_model_name
+        self.timestamp = timestamp
+
+        # 创建输出目录结构
+        self.setup_directories()
+
+    def setup_directories(self):
+        """创建输出目录结构"""
+        # 基础目录
+        self.base_dir = f"outputs/outputs_images/{self.model_type}/{self.base_model_name}/{self.timestamp}"
+
+        # 子目录
+        self.model_dir = os.path.join(self.base_dir, "models")
+        self.plot_dir = os.path.join(self.base_dir, "plots")
+        self.confusion_matrix_dir = os.path.join(self.base_dir, "confusion_matrices")
+        self.data_dir = os.path.join(self.base_dir, "training_data")
+
+        # 创建所有目录
+        for directory in [self.model_dir, self.plot_dir, self.confusion_matrix_dir, self.data_dir]:
+            os.makedirs(directory, exist_ok=True)
+
+        print(f"输出目录结构:")
+        print(f"  - 基础目录: {self.base_dir}")
+        print(f"  - 模型目录: {self.model_dir}")
+        print(f"  - 图像目录: {self.plot_dir}")
+        print(f"  - 混淆矩阵: {self.confusion_matrix_dir}")
+        print(f"  - 训练数据: {self.data_dir}")
 
 
 # 训练SSCNN模型
@@ -25,6 +63,10 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
                 patience=10,
                 device=None,
                 my_dataset=None):
+    # 创建训练器实例
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    trainer = ImageModelTrainer("sscnn", model_name, timestamp)
+
     train_loader, val_loader = create_dataloaders(my_dataset, batch_size=batch_size, shuffle=True)
     model = SSCNN(base_model_name=model_name).to(device)
     model.device = device
@@ -32,15 +74,32 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
-    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
+    # 扩展历史记录以包含更多信息
+    history = {
+        'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
+        'learning_rates': [], 'epoch_times': [], 'best_epoch': 0
+    }
+
+    # 训练配置信息
+    train_config = {
+        'model_type': 'SSCNN',
+        'base_model_name': model_name,
+        'num_epochs': num_epochs,
+        'learning_rate': lr,
+        'batch_size': batch_size,
+        'momentum': momentum,
+        'factor': factor,
+        'patience': patience,
+        'timestamp': timestamp,
+        'device': str(device)
+    }
+
     best_acc = 0.0
     current_lr = lr
 
-    # 创建图形和坐标轴
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-    plt.ion()  # 开启交互模式
-
     for epoch in range(num_epochs):
+        epoch_start_time = datetime.now()
+
         model.train()
         running_loss = 0.0
         correct = 0
@@ -65,64 +124,68 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
 
         train_loss = running_loss / len(train_loader)
         train_acc = 100 * correct / total
-        history['train_loss'].append(train_loss)
-        history['train_acc'].append(train_acc)
 
         val_loss, val_acc, val_labels, val_preds = evaluate_sscnn(model, val_loader, criterion, return_preds=True)
+
+        # 记录历史
+        history['train_loss'].append(train_loss)
+        history['train_acc'].append(train_acc)
         history['val_loss'].append(val_loss)
         history['val_acc'].append(val_acc)
+        history['learning_rates'].append(current_lr)
+        history['epoch_times'].append((datetime.now() - epoch_start_time).total_seconds())
 
-        # 在调度器step之前保存旧的学习率
+        # 学习率更新
         old_lr = current_lr
         scheduler.step(val_loss)
-        # 获取新的学习率
         current_lr = optimizer.param_groups[0]['lr']
-        # 检查学习率是否变化
         if current_lr != old_lr:
             print(f"学习率更新: {old_lr:.6f} -> {current_lr:.6f}")
-
-        # 确保文件夹存在
-        os.makedirs(f"outputs/outputs_images/models/sscnn", exist_ok=True)
 
         # 保存混淆矩阵
         save_confusion_matrix(val_labels, val_preds,
                               class_names=['Left', 'Right'],
                               title=f"SSCNN {model_name} - Epoch {epoch + 1}",
-                              filename=f"outputs/outputs_images/figures/sscnn/{model_name}/confmat_epoch{epoch + 1}.png",
-                              matrix_path=f"outputs/outputs_images/figures/sscnn/{model_name}/confmat_epoch{epoch + 1}"
+                              filename=os.path.join(trainer.confusion_matrix_dir, f"confmat_epoch{epoch + 1}.png")
                               )
-
-        # 实时绘图 - 更新同一个图
-        update_live_plot(history, fig, ax1, ax2, model_name="SSCNN")
 
         # 保存最优模型
         if val_acc > best_acc:
             best_acc = val_acc
-            torch.save(model.state_dict(), 'outputs/outputs_images/models/sscnn/best_sscnn_{}.pth'.format(model_name))
-            # 保存测试集准确率最高时的混淆矩阵
+            history['best_epoch'] = epoch + 1
+
+            model_path = os.path.join(trainer.model_dir, f'best_sscnn_{model_name}.pth')
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'val_acc': val_acc,
+                'val_loss': val_loss,
+                'train_acc': train_acc,
+                'train_loss': train_loss,
+                'config': train_config
+            }, model_path)
+
+            # 保存最佳混淆矩阵
             save_confusion_matrix(val_labels, val_preds,
                                   class_names=['Left', 'Right'],
-                                  title=f"SSCNN {model_name} - best epoch",
-                                  filename=f"outputs/outputs_images/figures/sscnn/{model_name}/confmat_best.png",
-                                  matrix_path=f"outputs/outputs_images/figures/sscnn/{model_name}/confmat_best"
+                                  title=f"SSCNN {model_name} - Best Epoch {epoch + 1}",
+                                  filename=os.path.join(trainer.confusion_matrix_dir, "confmat_best.png")
                                   )
 
         print(f'Epoch [{epoch + 1}/{num_epochs}], Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, '
               f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
 
-        # 判断是否需要提前停止，一定要在最后早停，不然会少保存一次
+        # 早停判断
         if early_stopper.step(optimizer):
             print("训练提前终止：学习率已经衰减达到最大次数。")
             break
 
-    plt.ioff()  # 关闭交互模式
-    plt.close()  # 关闭动态图窗口
+    # 训练完成后保存所有数据和图表
+    save_training_results(history, train_config, trainer, model, "SSCNN")
 
-    # 保存最终训练曲线
-    save_final_plot(history, model_name="SSCNN",
-                    save_path=f"outputs/outputs_images/training_curve/sscnn/{model_name}/training_curve.png")
-
-    return model, history
+    return model, history, trainer.base_dir
 
 
 # 训练RSSCNN模型
@@ -131,23 +194,44 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
                  momentum=0.9,
                  factor=0.1,
                  patience=10,
-                 device=None, my_dataset_1=None,):
-    # train_loader, val_loader = create_subject_dataloaders(my_dataset_1,my_dataset_2, batch_size=batch_size, shuffle=True)
+                 device=None, my_dataset_1=None):
+    # 创建训练器实例
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    trainer = ImageModelTrainer("rsscnn", model_name, timestamp)
+
     train_loader, val_loader = create_dataloaders(my_dataset_1, batch_size=batch_size, shuffle=True)
     model = RSSCNN(base_model_name=model_name, lambda_r=lambda_r).to(device)
     model.device = device
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
-    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
-    best_acc = 0.0
-    current_lr = lr  # 跟踪当前学习率
+    # 扩展历史记录
+    history = {
+        'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
+        'learning_rates': [], 'epoch_times': [], 'best_epoch': 0
+    }
 
-    # 创建图形和坐标轴
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-    plt.ion()  # 开启交互模式
+    # 训练配置信息
+    train_config = {
+        'model_type': 'RSSCNN',
+        'base_model_name': model_name,
+        'num_epochs': num_epochs,
+        'learning_rate': lr,
+        'lambda_r': lambda_r,
+        'batch_size': batch_size,
+        'momentum': momentum,
+        'factor': factor,
+        'patience': patience,
+        'timestamp': timestamp,
+        'device': str(device)
+    }
+
+    best_acc = 0.0
+    current_lr = lr
 
     for epoch in range(num_epochs):
+        epoch_start_time = datetime.now()
+
         model.train()
         running_loss = 0.0
         correct = 0
@@ -170,135 +254,179 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
 
         train_loss = running_loss / len(train_loader)
         train_acc = 100 * correct / total
+
+        val_loss, val_acc, val_labels, val_preds = evaluate_rsscnn(model, val_loader, return_preds=True)
+
+        # 记录历史
         history['train_loss'].append(train_loss)
         history['train_acc'].append(train_acc)
-
-        # 验证阶段 + 混淆矩阵 + 动态绘图
-        val_loss, val_acc, val_labels, val_preds = evaluate_rsscnn(model, val_loader, return_preds=True)
         history['val_loss'].append(val_loss)
         history['val_acc'].append(val_acc)
+        history['learning_rates'].append(current_lr)
+        history['epoch_times'].append((datetime.now() - epoch_start_time).total_seconds())
 
-        # 在调度器step之前保存旧的学习率
+        # 学习率更新
         old_lr = current_lr
         scheduler.step(val_loss)
-        # 获取新的学习率
         current_lr = optimizer.param_groups[0]['lr']
-        # 检查学习率是否变化
         if current_lr != old_lr:
             print(f"学习率更新: {old_lr:.6f} -> {current_lr:.6f}")
 
-        # 确保文件夹存在
-        os.makedirs('outputs/outputs_images/models/rsscnn', exist_ok=True)
+        # 保存混淆矩阵
+        save_confusion_matrix(val_labels, val_preds,
+                              class_names=['Left', 'Right'],
+                              title=f"RSSCNN {model_name} - Epoch {epoch + 1}",
+                              filename=os.path.join(trainer.confusion_matrix_dir, f"confmat_epoch{epoch + 1}.png")
+                              )
 
         # 保存最优模型
         if val_acc > best_acc:
             best_acc = val_acc
-            torch.save(model.state_dict(), 'outputs/outputs_images/models/rsscnn/best_rsscnn_{}.pth'.format(model_name))
-            # 保存测试集准确率最高时的混淆矩阵
-            save_confusion_matrix(val_labels, val_preds, class_names=['Left', 'Right'],
-                                  title=f"RSSCNN {model_name} - best epoch",
-                                  filename=f"outputs/outputs_images/figures/rsscnn/{model_name}/confmat_best.png",
-                                  matrix_path=f"outputs/outputs_images/figures/rsscnn/{model_name}/confmat_best"
+            history['best_epoch'] = epoch + 1
+
+            model_path = os.path.join(trainer.model_dir, f'best_rsscnn_{model_name}.pth')
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'val_acc': val_acc,
+                'val_loss': val_loss,
+                'train_acc': train_acc,
+                'train_loss': train_loss,
+                'config': train_config
+            }, model_path)
+
+            # 保存最佳混淆矩阵
+            save_confusion_matrix(val_labels, val_preds,
+                                  class_names=['Left', 'Right'],
+                                  title=f"RSSCNN {model_name} - Best Epoch {epoch + 1}",
+                                  filename=os.path.join(trainer.confusion_matrix_dir, "confmat_best.png")
                                   )
-
-        # 混淆矩阵保存
-        save_confusion_matrix(val_labels, val_preds, class_names=['Left', 'Right'],
-                              title=f"RSSCNN {model_name} - Epoch {epoch + 1}",
-                              filename=f"outputs/outputs_images/figures/rsscnn/{model_name}/confmat_epoch{epoch + 1}.png",
-                              matrix_path=f"outputs/outputs_images/figures/rsscnn/{model_name}/confmat_epoch{epoch + 1}"
-                              )
-
-        # 实时训练曲线绘图 - 更新同一个图
-        update_live_plot(history, fig, ax1, ax2, model_name="RSSCNN")
 
         print(f"Epoch [{epoch + 1}/{num_epochs}], "
               f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, "
               f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
 
-        # 判断是否需要提前停止，一定要在最后早停，不然会少保存一次
+        # 早停判断
         if early_stopper.step(optimizer):
             print("训练提前终止：学习率已经衰减达到最大次数。")
             break
 
-    plt.ioff()  # 关闭交互模式
-    plt.close()  # 关闭动态图窗口
+    # 训练完成后保存所有数据和图表
+    save_training_results(history, train_config, trainer, model, "RSSCNN")
 
-    # 保存最终训练曲线
-    save_final_plot(history, model_name="RSSCNN",
-                    save_path=f"outputs/outputs_images/training_curve/rsscnn/{model_name}/training_curve.png")
-
-    return model, history
+    return model, history, trainer.base_dir
 
 
-def update_live_plot(history, fig, ax1, ax2, model_name="Model"):
-    """更新实时训练曲线图"""
-    # 清空当前图形
-    ax1.clear()
-    ax2.clear()
+def save_training_results(history, train_config, trainer, model, model_name):
+    """保存训练结果，包括图表和数据"""
+
+    # 1. 保存训练配置
+    config_path = os.path.join(trainer.data_dir, "training_config.json")
+    with open(config_path, 'w', encoding='utf-8') as f:
+        json.dump(train_config, f, indent=2, ensure_ascii=False)
+
+    # 2. 保存训练历史数据为CSV
+    df_data = {
+        'epoch': list(range(1, len(history['train_loss']) + 1)),
+        'train_loss': history['train_loss'],
+        'train_acc': history['train_acc'],
+        'val_loss': history['val_loss'],
+        'val_acc': history['val_acc'],
+        'learning_rate': history['learning_rates'],
+        'epoch_time_seconds': history['epoch_times']
+    }
+
+    df = pd.DataFrame(df_data)
+    csv_path = os.path.join(trainer.data_dir, "training_history.csv")
+    df.to_csv(csv_path, index=False)
+
+    # 3. 保存训练摘要
+    summary = {
+        'best_epoch': history['best_epoch'],
+        'best_val_accuracy': max(history['val_acc']),
+        'best_train_accuracy': max(history['train_acc']),
+        'final_val_accuracy': history['val_acc'][-1],
+        'final_train_accuracy': history['train_acc'][-1],
+        'total_training_time_seconds': sum(history['epoch_times']),
+        'total_epochs': len(history['train_loss']),
+        'final_learning_rate': history['learning_rates'][-1]
+    }
+
+    summary_path = os.path.join(trainer.data_dir, "training_summary.json")
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    # 4. 绘制并保存训练曲线
+    plot_training_curves(history, model_name, train_config['base_model_name'], trainer.plot_dir)
+
+    # 5. 保存最终模型
+    final_model_path = os.path.join(trainer.model_dir, "final_model.pth")
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'history': history,
+        'config': train_config,
+        'summary': summary
+    }, final_model_path)
+
+    print(f"\n训练结果已保存到: {trainer.base_dir}")
+    print(f"最佳验证准确率: {summary['best_val_accuracy']:.2f}% (第 {summary['best_epoch']} 轮)")
+    print(f"总训练时间: {summary['total_training_time_seconds']:.2f} 秒")
+
+
+def plot_training_curves(history, model_name, base_model_name, plot_dir):
+    """绘制训练曲线"""
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
 
     epochs = range(1, len(history['train_loss']) + 1)
 
-    # 绘制损失曲线
-    ax1.plot(epochs, history['train_loss'], 'b-', label='Train Loss')
-    ax1.plot(epochs, history['val_loss'], 'r-', label='Val Loss')
-    ax1.set_title(f'{model_name} - Loss')
+    # 损失曲线
+    ax1.plot(epochs, history['train_loss'], 'b-', label='Train Loss', linewidth=2)
+    ax1.plot(epochs, history['val_loss'], 'r-', label='Val Loss', linewidth=2)
+    ax1.set_title(f'{model_name} {base_model_name} - Loss')
     ax1.set_xlabel('Epoch')
     ax1.set_ylabel('Loss')
     ax1.legend()
-    ax1.grid(True)
+    ax1.grid(True, alpha=0.3)
 
-    # 绘制准确率曲线
-    ax2.plot(epochs, history['train_acc'], 'b-', label='Train Acc')
-    ax2.plot(epochs, history['val_acc'], 'r-', label='Val Acc')
-    ax2.set_title(f'{model_name} - Accuracy')
+    # 准确率曲线
+    ax2.plot(epochs, history['train_acc'], 'b-', label='Train Acc', linewidth=2)
+    ax2.plot(epochs, history['val_acc'], 'r-', label='Val Acc', linewidth=2)
+    ax2.set_title(f'{model_name} {base_model_name} - Accuracy')
     ax2.set_xlabel('Epoch')
     ax2.set_ylabel('Accuracy (%)')
     ax2.legend()
-    ax2.grid(True)
+    ax2.grid(True, alpha=0.3)
 
-    # 调整布局
-    plt.tight_layout()
+    # 学习率曲线
+    ax3.plot(epochs, history['learning_rates'], 'g-', label='Learning Rate', linewidth=2)
+    ax3.set_title(f'{model_name} {base_model_name} - Learning Rate')
+    ax3.set_xlabel('Epoch')
+    ax3.set_ylabel('Learning Rate')
+    ax3.set_yscale('log')
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
 
-    # 更新图形
-    plt.draw()
-    plt.pause(0.1)  # 短暂暂停以更新图形
-
-
-def save_final_plot(history, model_name="Model", save_path=None):
-    """保存最终训练曲线图"""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-
-    epochs = range(1, len(history['train_loss']) + 1)
-
-    # 绘制损失曲线
-    ax1.plot(epochs, history['train_loss'], 'b-', label='Train Loss')
-    ax1.plot(epochs, history['val_loss'], 'r-', label='Val Loss')
-    ax1.set_title(f'{model_name} - Loss')
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Loss')
-    ax1.legend()
-    ax1.grid(True)
-
-    # 绘制准确率曲线
-    ax2.plot(epochs, history['train_acc'], 'b-', label='Train Acc')
-    ax2.plot(epochs, history['val_acc'], 'r-', label='Val Acc')
-    ax2.set_title(f'{model_name} - Accuracy')
-    ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Accuracy (%)')
-    ax2.legend()
-    ax2.grid(True)
+    # 每个epoch的训练时间
+    ax4.plot(epochs, history['epoch_times'], 'purple', label='Epoch Time', linewidth=2)
+    ax4.set_title(f'{model_name} {base_model_name} - Epoch Training Time')
+    ax4.set_xlabel('Epoch')
+    ax4.set_ylabel('Time (seconds)')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
 
     plt.tight_layout()
 
-    # 确保保存目录存在
-    if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-
+    # 保存图像
+    plot_path = os.path.join(plot_dir, "training_curves.png")
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.close()
 
+    print(f"训练曲线已保存: {plot_path}")
 
-# 评估SSCNN模型
+
+# 评估SSCNN模型（保持不变）
 def evaluate_sscnn(model, dataloader, criterion, return_preds=False):
     model.eval()
     total_loss = 0.0
@@ -335,7 +463,7 @@ def evaluate_sscnn(model, dataloader, criterion, return_preds=False):
         return avg_loss, accuracy
 
 
-# 评估RSSCNN模型
+# 评估RSSCNN模型（保持不变）
 def evaluate_rsscnn(model, dataloader, return_preds=False):
     model.eval()
     total_loss = 0.0
@@ -373,9 +501,9 @@ def evaluate_rsscnn(model, dataloader, return_preds=False):
 def run_sscnn_training(cfg, dataset):
     """运行SSCNN训练"""
     print("Training SSCNN with ...", cfg.base_model_name)
-    early_stopper_sscnn = SchedulerEarlyStopper(max_plateaus=cfg.max_lr_plateaus)  # 初始化早停器
+    early_stopper_sscnn = SchedulerEarlyStopper(max_plateaus=cfg.max_lr_plateaus)
 
-    sscnn_model, sscnn_history = train_sscnn(
+    sscnn_model, sscnn_history, output_dir = train_sscnn(
         model_name=cfg.base_model_name,
         num_epochs=cfg.num_epochs,
         lr=cfg.learning_rate,
@@ -388,16 +516,16 @@ def run_sscnn_training(cfg, dataset):
         my_dataset=dataset
     )
 
-    print("SSCNN训练完成！")
-    return sscnn_model, sscnn_history
+    print(f"SSCNN训练完成！结果保存在: {output_dir}")
+    return sscnn_model, sscnn_history, output_dir
 
 
-def run_rsscnn_training(cfg, dataset_1, dataset_2):
+def run_rsscnn_training(cfg, dataset_1):
     """运行RSSCNN训练"""
     print("\nTraining RSSCNN with", cfg.base_model_name)
-    early_stopper_rsscnn = SchedulerEarlyStopper(max_plateaus=cfg.max_lr_plateaus)  # 初始化早停器
+    early_stopper_rsscnn = SchedulerEarlyStopper(max_plateaus=cfg.max_lr_plateaus)
 
-    rsscnn_model, rsscnn_history = train_rsscnn(
+    rsscnn_model, rsscnn_history, output_dir = train_rsscnn(
         model_name=cfg.base_model_name,
         num_epochs=cfg.num_epochs,
         lr=cfg.learning_rate,
@@ -408,12 +536,11 @@ def run_rsscnn_training(cfg, dataset_1, dataset_2):
         momentum=cfg.momentum,
         factor=cfg.factor,
         patience=cfg.patience,
-        my_dataset_1=dataset_1,
-        my_dataset_2=dataset_2
+        my_dataset_1=dataset_1
     )
 
-    print("RSSCNN训练完成！")
-    return rsscnn_model, rsscnn_history
+    print(f"RSSCNN训练完成！结果保存在: {output_dir}")
+    return rsscnn_model, rsscnn_history, output_dir
 
 
 if __name__ == "__main__":
@@ -429,12 +556,10 @@ if __name__ == "__main__":
 
     # 训练SSCNN模型
     if train_sscnn_flag:
-        sscnn_model, sscnn_history = run_sscnn_training(cfg, dataset_1)
-        # 可以在这里添加SSCNN的后续处理，如测试、保存结果等
+        sscnn_model, sscnn_history, sscnn_dir = run_sscnn_training(cfg, dataset_1)
 
     # 训练RSSCNN模型
     if train_rsscnn_flag:
-        rsscnn_model, rsscnn_history = run_rsscnn_training(cfg, dataset_1)
-        # 可以在这里添加RSSCNN的后续处理，如测试、保存结果等
+        rsscnn_model, rsscnn_history, rsscnn_dir = run_rsscnn_training(cfg, dataset_1)
 
     print("所有训练任务完成！")
