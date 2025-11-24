@@ -131,7 +131,7 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
                  momentum=0.9,
                  factor=0.1,
                  patience=10,
-                 device=None, my_dataset_1=None, my_dataset_2=None, ):
+                 device=None, my_dataset_1=None,):
     # train_loader, val_loader = create_subject_dataloaders(my_dataset_1,my_dataset_2, batch_size=batch_size, shuffle=True)
     train_loader, val_loader = create_dataloaders(my_dataset_1, batch_size=batch_size, shuffle=True)
     model = RSSCNN(base_model_name=model_name, lambda_r=lambda_r).to(device)
@@ -422,7 +422,6 @@ if __name__ == "__main__":
 
     # 创建数据集
     dataset_1 = MyPP2Dataset(transform=cfg.transform, is_flipped=False)
-    dataset_2 = MyPP2Dataset(transform=cfg.transform, is_flipped=True)
 
     # 选择要训练的模型
     train_sscnn_flag = False  # 设置为True训练SSCNN，False则不训练
@@ -435,7 +434,7 @@ if __name__ == "__main__":
 
     # 训练RSSCNN模型
     if train_rsscnn_flag:
-        rsscnn_model, rsscnn_history = run_rsscnn_training(cfg, dataset_1, dataset_2)
+        rsscnn_model, rsscnn_history = run_rsscnn_training(cfg, dataset_1)
         # 可以在这里添加RSSCNN的后续处理，如测试、保存结果等
 
     print("所有训练任务完成！")

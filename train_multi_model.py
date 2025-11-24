@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from MyPP2Dataset import MyPP2Dataset, create_subject_dataloaders
 from models.multi_model import MultiModalFusionNetwork
 from config import config_multi_model
-import sys
 import os
 from utils.early_stop import SchedulerEarlyStopper
 
@@ -57,6 +56,8 @@ def train_multimodal_with_config():
         input_window_samples=2000,
         use_pretrained_eeg=config.use_pretrained,
         use_pretrained_image=config.use_pretrained,
+        freeze_eeg_backbone=config.freeze_eeg_backbone,
+        freeze_image_backbone=config.freeze_image_backbone,
         common_dim=512,
         private_dim=256,
         dropout_rate=0.5,
@@ -104,7 +105,7 @@ def train_multimodal_with_config():
 
     # 创建保存目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = f"checkpoints/multimodal_{timestamp}"
+    save_dir = f"outputs/outputs_multi_model/multimodal_{config.base_image_model}_{config.base_eeg_model}_{timestamp}"
     os.makedirs(save_dir, exist_ok=True)
 
     print("开始训练...")

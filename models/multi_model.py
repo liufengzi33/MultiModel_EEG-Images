@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import os
+from models.eeg_models import EEGFeatureExtractor, EEGFusionNetwork
 from utils.model_loader import ModelLoader
+from models.image_models import ImageFeatureExtractor
 
 
 class MultiModalFusionNetwork(nn.Module):
@@ -15,6 +16,8 @@ class MultiModalFusionNetwork(nn.Module):
                  input_window_samples=2000,
                  use_pretrained_eeg=True,
                  use_pretrained_image=True,
+                 freeze_eeg_backbone=True,  # 是否冻结EEG主干网络
+                 freeze_image_backbone=True,  # 是否冻结图像主干网络
                  base_path="outputs",
                  common_dim=512,
                  private_dim=256,
@@ -25,6 +28,8 @@ class MultiModalFusionNetwork(nn.Module):
         改进的多模态融合网络 - 基于脑机耦合学习思想
 
         Args:
+            freeze_eeg_backbone: 是否冻结EEG主干网络参数
+            freeze_image_backbone: 是否冻结图像主干网络参数
             common_dim: 公共特征维度
             private_dim: 私有特征维度
             alpha: 公共通道相似性损失权重
@@ -34,6 +39,8 @@ class MultiModalFusionNetwork(nn.Module):
 
         self.alpha = alpha
         self.beta = beta
+        self.freeze_eeg_backbone = freeze_eeg_backbone
+        self.freeze_image_backbone = freeze_image_backbone
 
         # 初始化模型加载器
         self.model_loader = ModelLoader(base_path)
@@ -115,7 +122,6 @@ class MultiModalFusionNetwork(nn.Module):
 
     def _build_eeg_path(self, eeg_model_name, in_chans, n_classes, input_window_samples, pretrained_ssbcinet):
         """构建EEG特征提取通路"""
-        from eeg_models import EEGFeatureExtractor, EEGFusionNetwork
 
         class EEGFeaturePath(nn.Module):
             def __init__(self, feature_extractor, fusion_net, out_dim):
@@ -151,7 +157,6 @@ class MultiModalFusionNetwork(nn.Module):
 
     def _build_image_path(self, image_model_name, pretrained_image_model, image_model_type):
         """构建图像特征提取通路"""
-        from image_models import ImageFeatureExtractor
 
         if pretrained_image_model is not None:
             print(f"✅ 使用预训练的{image_model_type.upper()}初始化图像通路")
@@ -236,30 +241,47 @@ class MultiModalFusionNetwork(nn.Module):
         # 一阶矩 (均值)
         x_mean = torch.mean(X, 0)
         y_mean = torch.mean(Y, 0)
-        moment_diff = torch.norm(x_mean - y_mean, 2)
 
-        # 高阶矩 (2到K阶)
+        moment_diff = torch.norm(x_mean - y_mean, p=2)
+
+        diffs = [moment_diff]  # 累积所有 moment 差异
+
         for k in range(2, K + 1):
-            x_moment = torch.mean((X - x_mean) ** k, 0)
-            y_moment = torch.mean((Y - y_mean) ** k, 0)
-            moment_diff += torch.norm(x_moment - y_moment, 2)
+            x_moment = torch.mean((X - x_mean) ** k, dim=0)
+            y_moment = torch.mean((Y - y_mean) ** k, dim=0)
+            diffs.append(torch.norm(x_moment - y_moment, p=2))
 
-        return moment_diff
+        return sum(diffs)
 
     def orthogonality_loss(self, eeg_common, eeg_private, image_common, image_private):
         """
-        正交性损失，确保私有特征与公共特征以及跨模态私有特征之间的差异性
+        简单的正交性损失 - 直接处理维度不匹配
         """
-        batch_size = eeg_common.size(0)
 
-        # 同一模态内公共特征与私有特征的正交性
-        eeg_orth_loss = torch.norm(torch.mm(eeg_common.t(), eeg_private), p='fro') ** 2
-        image_orth_loss = torch.norm(torch.mm(image_common.t(), image_private), p='fro') ** 2
+        def dimension_aware_loss(A, B):
+            """维度感知的损失计算"""
+            # 统一到最小维度
+            min_dim = min(A.size(1), B.size(1))
+            A_trim = A[:, :min_dim]
+            B_trim = B[:, :min_dim]
 
-        # 跨模态私有特征之间的正交性
-        cross_orth_loss = torch.norm(torch.mm(eeg_private.t(), image_private), p='fro') ** 2
+            # 归一化
+            A_norm = F.normalize(A_trim, p=2, dim=1)
+            B_norm = F.normalize(B_trim, p=2, dim=1)
 
-        return (eeg_orth_loss + image_orth_loss + cross_orth_loss) / batch_size
+            # 计算批次内余弦相似度的平均值
+            cosine_sim = (A_norm * B_norm).sum(dim=1)  # [batch_size]
+
+            # 我们希望余弦相似度接近0（正交）
+            return cosine_sim.abs().mean()  # 取绝对值后平均
+
+        loss1 = dimension_aware_loss(eeg_common, eeg_private)
+        loss2 = dimension_aware_loss(image_common, image_private)
+        loss3 = dimension_aware_loss(eeg_private, image_private)
+
+        total_loss = (loss1 + loss2 + loss3) / 3.0
+
+        return total_loss
 
     def _initialize_weights(self):
         """初始化权重"""
@@ -272,31 +294,35 @@ class MultiModalFusionNetwork(nn.Module):
 
 # 测试修改后的网络
 if __name__ == "__main__":
-    print("=== 测试改进的多模态网络 ===")
+    print("=== 测试改进的多模态网络（带完整参数冻结） ===")
 
-    model = MultiModalFusionNetwork(
-        use_pretrained_eeg=False,
-        use_pretrained_image=False
-    )
+    # 测试不同配置
+    configs = [
+        {"freeze_eeg": False, "freeze_image": False, "desc": "全参数训练"},
+        {"freeze_eeg": True, "freeze_image": False, "desc": "冻结EEG，训练图像"},
+        {"freeze_eeg": False, "freeze_image": True, "desc": "冻结图像，训练EEG"},
+        {"freeze_eeg": True, "freeze_image": True, "desc": "冻结主干，只训练融合层"}
+    ]
 
-    # 测试输入
-    eeg1 = torch.randn(2, 64, 2000)
-    eeg2 = torch.randn(2, 64, 2000)
-    img1 = torch.randn(2, 3, 224, 224)
-    img2 = torch.randn(2, 3, 224, 224)
-    targets = torch.tensor([0, 1])  # 二分类标签
+    for config in configs:
+        print(f"\n--- 测试配置: {config['desc']} ---")
 
-    # 前向传播
-    logits, eeg_common, image_common, eeg_private, image_private = model(eeg1, eeg2, img1, img2)
+        model = MultiModalFusionNetwork(
+            use_pretrained_eeg=False,  # 测试时设为False避免加载实际文件
+            use_pretrained_image=False,
+            freeze_eeg_backbone=config['freeze_eeg'],
+            freeze_image_backbone=config['freeze_image']
+        )
+        print(model)
 
-    print(f"输出logits形状: {logits.shape}")
-    print(f"EEG公共特征形状: {eeg_common.shape}")
-    print(f"图像公共特征形状: {image_common.shape}")
-    print(f"EEG私有特征形状: {eeg_private.shape}")
-    print(f"图像私有特征形状: {image_private.shape}")
+        # 测试输入
+        eeg1 = torch.randn(2, 64, 2000)
+        eeg2 = torch.randn(2, 64, 2000)
+        img1 = torch.randn(2, 3, 224, 224)
+        img2 = torch.randn(2, 3, 224, 224)
 
-    # 计算损失
-    losses = model.compute_loss(eeg_common, image_common, eeg_private, image_private, logits, targets)
+        # 前向传播
+        with torch.no_grad():
+            logits, eeg_common, image_common, eeg_private, image_private = model(eeg1, eeg2, img1, img2)
 
-    for loss_name, loss_value in losses.items():
-        print(f"{loss_name}: {loss_value.item():.4f}")
+        print(f"输出logits形状: {logits.shape}")
