@@ -96,7 +96,7 @@ class EEGFeatureExtractor(nn.Module):
                 self.out_dim = out.view(out.size(0), -1).shape[1]
 
         else:
-            raise ValueError("Unsupported EEG model. Choose 'EEGNet', 'ShallowFBCSPNet' or 'EEGNetv4'.")
+            raise ValueError("Unsupported EEG model. Choose 'EEGNetv1', 'ShallowFBCSPNet' or 'EEGNetv4'.")
 
     def forward(self, x):
         out = self.feature_net(x)
