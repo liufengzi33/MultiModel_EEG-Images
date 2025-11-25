@@ -17,6 +17,6 @@ class Config:
         self.max_lr_plateaus = 8  # 最多衰减5次
 
         # 模型与路径设置
-        self.base_model_name = 'ShallowFBCSPNet'  # EEGNet, ShallowFBCSPNet
+        self.base_model_name = 'ShallowFBCSPNet'  # EEGNetv1, EEGNetv4, ShallowFBCSPNet
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         # self.device = 'cpu'

@@ -32,15 +32,18 @@ class EEGTrainer:
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # 保存为实例变量
         self.model_output_dir = os.path.join(self.output_base_dir, self.timestamp, "models")
         self.plot_output_dir = os.path.join(self.output_base_dir, self.timestamp, "plots")
+        self.checkpoint_output_dir = os.path.join(self.output_base_dir, self.timestamp, "checkpoints")  # 新增checkpoints目录
 
         # 创建目录
         os.makedirs(self.model_output_dir, exist_ok=True)
         os.makedirs(self.plot_output_dir, exist_ok=True)
+        os.makedirs(self.checkpoint_output_dir, exist_ok=True)  # 创建checkpoints目录
 
         print(f"Output directories created:")
         print(f"  - Base: {self.output_base_dir}")
         print(f"  - Models: {self.model_output_dir}")
         print(f"  - Plots: {self.plot_output_dir}")
+        print(f"  - Checkpoints: {self.checkpoint_output_dir}")  # 打印checkpoints目录
 
         # 损失函数和优化器
         self.criterion = nn.BCEWithLogitsLoss()
@@ -161,10 +164,10 @@ class EEGTrainer:
             print(f'Learning Rate: {self.optimizer.param_groups[0]["lr"]:.6f}')
             print(f'Plateau count: {self.early_stopper.plateau_count}/{self.early_stopper.max_plateaus}')
 
-            # 保存最佳模型
+            # 保存最佳模型（仍然保存在models文件夹）
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
-                model_path = os.path.join(self.model_output_dir, f'best_model.pth')  # 简化文件名
+                model_path = os.path.join(self.model_output_dir, f'best_model.pth')
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': self.model.state_dict(),
@@ -183,9 +186,9 @@ class EEGTrainer:
                 }, model_path)
                 print(f'Best model saved with validation accuracy: {val_acc:.2f}% at {model_path}')
 
-            # 每10个epoch保存一次检查点
+            # 每10个epoch保存一次检查点（保存到checkpoints文件夹）
             if (epoch + 1) % 10 == 0:
-                checkpoint_path = os.path.join(self.model_output_dir, f'checkpoint_epoch_{epoch + 1}.pth')
+                checkpoint_path = os.path.join(self.checkpoint_output_dir, f'checkpoint_epoch_{epoch + 1}.pth')
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': self.model.state_dict(),
@@ -196,7 +199,14 @@ class EEGTrainer:
                     'train_acc': train_acc,
                     'val_acc': val_acc,
                     'timestamp': self.timestamp,
-                    'base_model_name': self.base_model_name
+                    'base_model_name': self.base_model_name,
+                    'training_history': {
+                        'train_losses': self.train_losses[:epoch+1],
+                        'val_losses': self.val_losses[:epoch+1],
+                        'train_accuracies': self.train_accuracies[:epoch+1],
+                        'val_accuracies': self.val_accuracies[:epoch+1],
+                        'learning_rates': self.learning_rates[:epoch+1]
+                    }
                 }, checkpoint_path)
                 print(f'Checkpoint saved at {checkpoint_path}')
 
@@ -206,7 +216,7 @@ class EEGTrainer:
                     f'Early stopping at epoch {epoch + 1} due to {self.early_stopper.max_plateaus} learning rate plateaus')
                 break
 
-        # 训练结束后保存最终模型
+        # 训练结束后保存最终模型（仍然保存在models文件夹）
         final_model_path = os.path.join(self.model_output_dir, 'final_model.pth')
         torch.save({
             'epoch': epochs,
