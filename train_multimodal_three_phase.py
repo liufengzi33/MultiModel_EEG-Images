@@ -404,16 +404,16 @@ class MultiStageTrainer:
         )
 
         # 阶段3: 微调backbone
-        # 非VGG解冻前四层即可
-        self.unfreeze_backbone_last_layers(eeg_layers=8, img_layers=8)
+        # 非VGG解冻前四层即可，VGG解冻8层就能收敛
+        self.unfreeze_backbone_last_layers(eeg_layers=4, img_layers=4)
         self.unfreeze_heads()
         self.train_stage(
             stage_name="stage3_finetune_backbone",
             lr_head=2e-4,
             lr_backbone=1e-5,
-            max_epochs=150,
+            max_epochs=60,
             patience=10,
-            min_epochs=100
+            min_epochs=30
         )
 
         # 保存最终模型和训练历史
