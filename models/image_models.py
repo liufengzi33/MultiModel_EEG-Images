@@ -25,7 +25,7 @@ class BaseFeatureExtractor(nn.Module):
 
             try:
                 # 加载完整 checkpoint
-                weights_path = os.path.join('../weights/alexnet_places365.pth.tar')
+                weights_path = os.path.join('weights/alexnet_places365.pth.tar')
                 checkpoint = torch.load(weights_path, map_location='cpu')
                 # 提取 state_dict
                 state_dict = checkpoint['state_dict']

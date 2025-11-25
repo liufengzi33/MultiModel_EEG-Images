@@ -304,6 +304,14 @@ def main():
         shuffle=True
     )
 
+    # 检查数据分布
+    train_labels = [label for _, _, _, _, label in train_loader.dataset]
+    test_labels = [label for _, _, _, _, label in val_loader.dataset]
+    print("==========================检查数据集分布==========================")
+    print(f"训练集分布: {torch.bincount(torch.tensor(train_labels)).tolist()}")
+    print(f"测试集分布: {torch.bincount(torch.tensor(test_labels)).tolist()}")
+    print(f"训练集: {len(train_loader.dataset)}, 测试集: {len(val_loader.dataset)}")
+
     # 创建模型
     model = SSBCINet(
         base_model_name=cfg.base_model_name,
