@@ -398,21 +398,22 @@ class MultiStageTrainer:
             stage_name="stage2_align_features",
             lr_head=5e-4,
             lr_backbone=0,
-            max_epochs=50,
+            max_epochs=80,
             patience=10,
-            min_epochs=15
+            min_epochs=30
         )
 
         # 阶段3: 微调backbone
-        self.unfreeze_backbone_last_layers(eeg_layers=4, img_layers=4)
+        # 非VGG解冻前四层即可
+        self.unfreeze_backbone_last_layers(eeg_layers=8, img_layers=8)
         self.unfreeze_heads()
         self.train_stage(
             stage_name="stage3_finetune_backbone",
             lr_head=2e-4,
             lr_backbone=1e-5,
-            max_epochs=40,
-            patience=6,
-            min_epochs=10
+            max_epochs=150,
+            patience=10,
+            min_epochs=100
         )
 
         # 保存最终模型和训练历史

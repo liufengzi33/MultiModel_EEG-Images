@@ -16,8 +16,8 @@ class Config:
         self.max_lr_plateaus = 8  # 最多衰减5次
 
         # 模型与路径设置
-        self.base_eeg_model = 'EEGNet'
-        self.base_image_model = 'AlexNet'
-        self.image_model_type = "rsscnn"
+        self.base_eeg_model = 'EEGNetv4' # EEGNetv1 EEGNetv4 ShallowFBCSPNet
+        self.base_image_model = 'VGG' # AlexNet PlacesNet VGG
+        self.image_model_type = "rsscnn" # rsscnn sscnn
         self.use_pretrained = True # 使用预训练的eeg&image模型
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
