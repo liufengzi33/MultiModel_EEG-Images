@@ -6,8 +6,8 @@ from braindecode.models import EEGNetv1, ShallowFBCSPNet, EEGNetv4
 class EEGFeatureExtractor(nn.Module):
     def __init__(self, model_name="EEGNet", in_chans=64, n_classes=2, input_window_samples=2000):
         super(EEGFeatureExtractor, self).__init__()
-        # TODO 后续加上EEGNetv4模型,这个是EEGNetv1
-        if model_name == "EEGNet":
+
+        if model_name == "EEGNetv1":
             full_model = EEGNetv1(
                 n_classes=n_classes,
                 in_chans=in_chans,
@@ -64,13 +64,43 @@ class EEGFeatureExtractor(nn.Module):
                 out = self.feature_net(dummy_input)
                 self.out_dim = out.view(out.size(0), -1).shape[1]
 
+        elif model_name == "EEGNetv4":
+            full_model = EEGNetv4(
+                n_classes=n_classes,
+                in_chans=in_chans,
+                input_window_samples=input_window_samples,
+                final_conv_length="auto"
+            )
+            # 截取所有层直到conv_classifier之前的部分（drop_2 之后为 classifier）
+            self.feature_net = nn.Sequential(
+                full_model.ensuredims,
+                full_model.dimshuffle,
+                full_model.conv_temporal,
+                full_model.bnorm_temporal,
+                full_model.conv_spatial,
+                full_model.bnorm_1,
+                full_model.elu_1,
+                full_model.pool_1,
+                full_model.drop_1,
+                full_model.conv_separable_depth,
+                full_model.conv_separable_point,
+                full_model.bnorm_2,
+                full_model.elu_2,
+                full_model.pool_2,
+                full_model.drop_2,
+            )
+            # 这里可以使用 dummy forward 计算输出维度
+            dummy_input = torch.randn(1, in_chans, input_window_samples)
+            with torch.no_grad():
+                out = self.feature_net(dummy_input)
+                self.out_dim = out.view(out.size(0), -1).shape[1]
+
         else:
-            raise ValueError("Unsupported EEG model. Choose 'EEGNet' or 'ShallowFBCSPNet'.")
+            raise ValueError("Unsupported EEG model. Choose 'EEGNet', 'ShallowFBCSPNet' or 'EEGNetv4'.")
 
     def forward(self, x):
         out = self.feature_net(x)
         return out.reshape(out.size(0), -1)  # 展平为 [B, out_dim]
-
 
 
 class EEGFusionNetwork(nn.Module):
@@ -80,7 +110,7 @@ class EEGFusionNetwork(nn.Module):
             nn.Linear(input_dim * 2, 1024),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(1024, 512), # 因为ImageModel的输出是512，所以这里也设置为512
+            nn.Linear(1024, 512),  # 因为ImageModel的输出是512，所以这里也设置为512
             nn.ReLU(),
         )
 
@@ -135,12 +165,24 @@ class SSBCINet(nn.Module):
 
 
 if __name__ == "__main__":
-    # 测试模型
-    model = ShallowFBCSPNet(input_window_samples=200, in_chans=64, n_classes=2)
+    # 测试EEGNetv4模型
+    print("Testing EEGNetv4 model:")
+    model_v4 = EEGNetv4(input_window_samples=200, in_chans=64, n_classes=2)
+    print(model_v4)
+
+    # 测试SSBCINet with EEGNetv4
+    print("\nTesting SSBCINet with EEGNetv4:")
+    model = SSBCINet(base_model_name="EEGNetv4", in_chans=64, n_classes=2, input_window_samples=2000)
     print(model)
-    model = SSBCINet(base_model_name="EEGNet", in_chans=64, n_classes=2, input_window_samples=2000)
-    print(model)
+
     x1 = torch.randn(8, 64, 2000)  # 假设 EEG 信号的形状为 [batch_size, channels, time]
     x2 = torch.randn(8, 64, 2000)
     output = model(x1, x2)
-    print(output.shape)  # 输出形状应该是 [8, 512]
+    print(f"Output shape: {output.shape}")  # 输出形状应该是 [8]
+
+    # 测试特征提取器单独使用
+    print("\nTesting EEGFeatureExtractor with EEGNetv4:")
+    feature_extractor = EEGFeatureExtractor(model_name="EEGNetv4", in_chans=64, n_classes=2, input_window_samples=2000)
+    features = feature_extractor(x1)
+    print(f"Feature shape: {features.shape}")
+    print(f"Feature dimension: {feature_extractor.out_dim}")
