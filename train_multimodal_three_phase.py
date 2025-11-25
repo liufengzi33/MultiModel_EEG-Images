@@ -51,8 +51,6 @@ class MultiStageTrainer:
             in_chans=64,
             n_classes=2,
             input_window_samples=2000,
-            freeze_eeg_backbone=False,
-            freeze_image_backbone=False,
             common_dim=512,
             private_dim=256,
             dropout_rate=0.5,

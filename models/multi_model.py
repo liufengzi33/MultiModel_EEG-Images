@@ -8,7 +8,7 @@ from models.image_models import ImageFeatureExtractor
 
 class MultiModalFusionNetwork(nn.Module):
     def __init__(self,
-                 eeg_model_name="EEGNet",
+                 eeg_model_name="EEGNetv1",
                  image_model_name="PlacesNet",
                  image_model_type="rsscnn",
                  in_chans=64,
@@ -16,8 +16,6 @@ class MultiModalFusionNetwork(nn.Module):
                  input_window_samples=2000,
                  use_pretrained_eeg=True,
                  use_pretrained_image=True,
-                 freeze_eeg_backbone=True,  # 是否冻结EEG主干网络
-                 freeze_image_backbone=True,  # 是否冻结图像主干网络
                  base_path="outputs",
                  common_dim=512,
                  private_dim=256,
@@ -28,8 +26,6 @@ class MultiModalFusionNetwork(nn.Module):
         改进的多模态融合网络 - 基于脑机耦合学习思想
 
         Args:
-            freeze_eeg_backbone: 是否冻结EEG主干网络参数
-            freeze_image_backbone: 是否冻结图像主干网络参数
             common_dim: 公共特征维度
             private_dim: 私有特征维度
             alpha: 公共通道相似性损失权重
@@ -39,8 +35,6 @@ class MultiModalFusionNetwork(nn.Module):
 
         self.alpha = alpha
         self.beta = beta
-        self.freeze_eeg_backbone = freeze_eeg_backbone
-        self.freeze_image_backbone = freeze_image_backbone
 
         # 初始化模型加载器
         self.model_loader = ModelLoader(base_path)
@@ -294,35 +288,23 @@ class MultiModalFusionNetwork(nn.Module):
 
 # 测试修改后的网络
 if __name__ == "__main__":
-    print("=== 测试改进的多模态网络（带完整参数冻结） ===")
+    print("=== 测试多模态网络 ===")
 
-    # 测试不同配置
-    configs = [
-        {"freeze_eeg": False, "freeze_image": False, "desc": "全参数训练"},
-        {"freeze_eeg": True, "freeze_image": False, "desc": "冻结EEG，训练图像"},
-        {"freeze_eeg": False, "freeze_image": True, "desc": "冻结图像，训练EEG"},
-        {"freeze_eeg": True, "freeze_image": True, "desc": "冻结主干，只训练融合层"}
-    ]
 
-    for config in configs:
-        print(f"\n--- 测试配置: {config['desc']} ---")
+    model = MultiModalFusionNetwork(
+        use_pretrained_eeg=True,  # 测试时设为False避免加载实际文件
+        use_pretrained_image=True,
+    )
+    print(model)
 
-        model = MultiModalFusionNetwork(
-            use_pretrained_eeg=False,  # 测试时设为False避免加载实际文件
-            use_pretrained_image=False,
-            freeze_eeg_backbone=config['freeze_eeg'],
-            freeze_image_backbone=config['freeze_image']
-        )
-        print(model)
+    # 测试输入
+    eeg1 = torch.randn(2, 64, 2000)
+    eeg2 = torch.randn(2, 64, 2000)
+    img1 = torch.randn(2, 3, 224, 224)
+    img2 = torch.randn(2, 3, 224, 224)
 
-        # 测试输入
-        eeg1 = torch.randn(2, 64, 2000)
-        eeg2 = torch.randn(2, 64, 2000)
-        img1 = torch.randn(2, 3, 224, 224)
-        img2 = torch.randn(2, 3, 224, 224)
+    # 前向传播
+    with torch.no_grad():
+        logits, eeg_common, image_common, eeg_private, image_private = model(eeg1, eeg2, img1, img2)
 
-        # 前向传播
-        with torch.no_grad():
-            logits, eeg_common, image_common, eeg_private, image_private = model(eeg1, eeg2, img1, img2)
-
-        print(f"输出logits形状: {logits.shape}")
+    print(f"输出logits形状: {logits.shape}")
