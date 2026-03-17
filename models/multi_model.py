@@ -100,12 +100,12 @@ class MultiModalFusionNetwork(nn.Module):
         )
 
         # 分类器
-        fusion_dim = common_dim + private_dim * 2  # 公共特征 + EEG私有特征 + 图像私有特征
+        fusion_dim = common_dim * 2 + private_dim * 2  # 公共特征 + EEG私有特征 + 图像私有特征
         self.classifier = nn.Sequential(
-            nn.Linear(fusion_dim, 256),
+            nn.Linear(fusion_dim, 512),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(256, 128),
+            nn.Linear(512, 128),
             nn.ReLU(),
             nn.Dropout(dropout_rate / 2),
             nn.Linear(128, n_classes if n_classes > 2 else 1)
@@ -187,8 +187,13 @@ class MultiModalFusionNetwork(nn.Module):
         eeg_private = self.eeg_private_encoder(eeg_base_features)
         image_private = self.image_private_encoder(image_base_features)
 
-        # 特征融合: 公共特征 + EEG私有特征 + 图像私有特征
-        fused_features = torch.cat([eeg_common, eeg_private, image_private], dim=1)
+        # 特征融合: EEG公共特征 + 图像公共特征 + EEG私有特征 + 图像私有特征
+        fused_features = torch.cat([
+            eeg_common,  # EEG公共特征
+            image_common,  # 图像公共特征
+            eeg_private,  # EEG私有特征
+            image_private  # 图像私有特征
+        ], dim=1)
 
         # 分类
         logits = self.classifier(fused_features)

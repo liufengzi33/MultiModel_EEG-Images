@@ -50,8 +50,12 @@ class PrivilegedTrainer:
         self.val_feature_align_losses = []
         self.val_common_sim_losses = []
         self.val_private_diff_losses = []
-        self.teacher_accuracies = []
-        self.student_accuracies = []
+
+        # 准确率记录 - 新增训练准确率
+        self.train_teacher_accuracies = []  # 新增
+        self.train_student_accuracies = []  # 新增
+        self.val_teacher_accuracies = []
+        self.val_student_accuracies = []
         self.learning_rates = []
 
         self.best_val_loss = float('inf')
@@ -145,6 +149,14 @@ class PrivilegedTrainer:
 
         return train_loader, val_loader
 
+    def _calculate_accuracy(self, logits, labels):
+        """计算准确率"""
+        if logits.dim() == 1:  # 二分类
+            preds = (torch.sigmoid(logits) > 0.5).float()
+        else:  # 多分类
+            preds = torch.argmax(logits, dim=1)
+        return (preds == labels).float().mean().item() * 100
+
     def train_epoch(self, train_loader):
         """训练一个epoch"""
         self.model.train()
@@ -155,6 +167,11 @@ class PrivilegedTrainer:
         total_feature_align_loss = 0
         total_common_sim_loss = 0
         total_private_diff_loss = 0
+
+        # 新增：训练准确率计算
+        teacher_correct = 0
+        student_correct = 0
+        total_samples = 0
 
         for batch_idx, (left_img, right_img, left_eeg, right_eeg, labels) in enumerate(train_loader):
             # 移动到设备
@@ -200,20 +217,26 @@ class PrivilegedTrainer:
             total_common_sim_loss += loss_dict['common_sim_loss'].item()
             total_private_diff_loss += loss_dict['private_diff_loss'].item()
 
-            # # 打印进度 - 打印所有7个损失
-            # if batch_idx % self.config.log_interval == 0:
-            #     print(f'训练批次 [{batch_idx}/{len(train_loader)}]')
-            #     print(f'  总损失: {loss.item():.6f}')
-            #     print(f'  教师损失: {loss_dict["teacher_loss"].item():.6f}')
-            #     print(f'  学生损失: {loss_dict["student_loss"].item():.6f}')
-            #     print(f'  蒸馏损失: {loss_dict["distill_loss"].item():.6f}')
-            #     print(f'  特征对齐损失: {loss_dict["feature_align_loss"].item():.6f}')
-            #     print(f'  公共特征相似损失: {loss_dict["common_sim_loss"].item():.6f}')
-            #     print(f'  私有特征差异损失: {loss_dict["private_diff_loss"].item():.6f}')
-            #     print('  ' + '-' * 40)
+            # 新增：计算训练准确率
+            teacher_logits = outputs['teacher_logits']
+            student_logits = outputs['student_logits']
 
-        # 计算平均损失
+            if teacher_logits.dim() == 1:  # 二分类
+                teacher_preds = (torch.sigmoid(teacher_logits) > 0.5).float()
+                student_preds = (torch.sigmoid(student_logits) > 0.5).float()
+            else:  # 多分类
+                teacher_preds = torch.argmax(teacher_logits, dim=1)
+                student_preds = torch.argmax(student_logits, dim=1)
+
+            teacher_correct += (teacher_preds == labels).sum().item()
+            student_correct += (student_preds == labels).sum().item()
+            total_samples += labels.size(0)
+
+        # 计算平均损失和准确率
         num_batches = len(train_loader)
+        teacher_acc = teacher_correct / total_samples * 100
+        student_acc = student_correct / total_samples * 100
+
         return {
             'total_loss': total_loss / num_batches,
             'teacher_loss': total_teacher_loss / num_batches,
@@ -221,7 +244,9 @@ class PrivilegedTrainer:
             'distill_loss': total_distill_loss / num_batches,
             'feature_align_loss': total_feature_align_loss / num_batches,
             'common_sim_loss': total_common_sim_loss / num_batches,
-            'private_diff_loss': total_private_diff_loss / num_batches
+            'private_diff_loss': total_private_diff_loss / num_batches,
+            'teacher_acc': teacher_acc,  # 新增
+            'student_acc': student_acc  # 新增
         }
 
     def validate_epoch(self, val_loader):
@@ -284,18 +309,6 @@ class PrivilegedTrainer:
                 student_correct += (student_preds == labels).sum().item()
                 total_samples += labels.size(0)
 
-                # # 打印验证进度
-                # if batch_idx % self.config.log_interval == 0:
-                #     print(f'验证批次 [{batch_idx}/{len(val_loader)}]')
-                #     print(f'  总损失: {loss.item():.6f}')
-                #     print(f'  教师损失: {loss_dict["teacher_loss"].item():.6f}')
-                #     print(f'  学生损失: {loss_dict["student_loss"].item():.6f}')
-                #     print(f'  蒸馏损失: {loss_dict["distill_loss"].item():.6f}')
-                #     print(f'  特征对齐损失: {loss_dict["feature_align_loss"].item():.6f}')
-                #     print(f'  公共特征相似损失: {loss_dict["common_sim_loss"].item():.6f}')
-                #     print(f'  私有特征差异损失: {loss_dict["private_diff_loss"].item():.6f}')
-                #     print('  ' + '-' * 40)
-
         # 计算平均指标
         num_batches = len(val_loader)
         teacher_acc = teacher_correct / total_samples * 100
@@ -325,8 +338,10 @@ class PrivilegedTrainer:
             'val_teacher_losses': self.val_teacher_losses,
             'val_student_losses': self.val_student_losses,
             'val_distill_losses': self.val_distill_losses,
-            'teacher_accuracies': self.teacher_accuracies,
-            'student_accuracies': self.student_accuracies,
+            'train_teacher_accuracies': self.train_teacher_accuracies,  # 新增
+            'train_student_accuracies': self.train_student_accuracies,  # 新增
+            'val_teacher_accuracies': self.val_teacher_accuracies,
+            'val_student_accuracies': self.val_student_accuracies,
             'learning_rates': self.learning_rates,
             'best_val_loss': self.best_val_loss,
             'best_teacher_acc': self.best_teacher_acc,
@@ -341,12 +356,59 @@ class PrivilegedTrainer:
         print("训练历史已保存")
 
     def _plot_training_results(self):
-        """绘制训练结果图表"""
+        """绘制训练结果图表 - 按照您的要求修改"""
         epochs = range(1, len(self.train_losses) + 1)
 
-        # 创建图表
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        # 创建图表 - 修改为1行3列的布局
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
         fig.suptitle('Privileged Learning Training Results', fontsize=16)
+
+        # 1. 教师网络准确率曲线（训练和测试）
+        axes[0].plot(epochs, self.train_teacher_accuracies, 'r-', label='Train Teacher Acc', alpha=0.7, linewidth=2)
+        axes[0].plot(epochs, self.val_teacher_accuracies, 'b-', label='Val Teacher Acc', alpha=0.7, linewidth=2)
+        axes[0].set_title('Teacher Network Accuracy')
+        axes[0].set_xlabel('Epoch')
+        axes[0].set_ylabel('Accuracy (%)')
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+        axes[0].set_ylim([0, 100])  # 准确率范围0-100%
+
+        # 2. 学生网络准确率曲线（训练和测试）
+        axes[1].plot(epochs, self.train_student_accuracies, 'r-', label='Train Student Acc', alpha=0.7, linewidth=2)
+        axes[1].plot(epochs, self.val_student_accuracies, 'g-', label='Val Student Acc', alpha=0.7, linewidth=2)
+        axes[1].set_title('Student Network Accuracy')
+        axes[1].set_xlabel('Epoch')
+        axes[1].set_ylabel('Accuracy (%)')
+        axes[1].legend()
+        axes[1].grid(True, alpha=0.3)
+        axes[1].set_ylim([0, 100])  # 准确率范围0-100%
+
+        # 3. 测试准确率曲线（教师和学生对比）
+        axes[2].plot(epochs, self.val_teacher_accuracies, 'b-', label='Teacher Val Acc', alpha=0.7, linewidth=2)
+        axes[2].plot(epochs, self.val_student_accuracies, 'g-', label='Student Val Acc', alpha=0.7, linewidth=2)
+        axes[2].set_title('Teacher vs Student Validation Accuracy')
+        axes[2].set_xlabel('Epoch')
+        axes[2].set_ylabel('Accuracy (%)')
+        axes[2].legend()
+        axes[2].grid(True, alpha=0.3)
+        axes[2].set_ylim([0, 100])  # 准确率范围0-100%
+
+        plt.tight_layout()
+
+        # 保存图表
+        plot_path = os.path.join(self.output_dir, "training_accuracy_plots.png")
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        # 额外保存一个包含所有损失曲线的图表
+        self._plot_loss_curves(epochs)
+
+        print(f"训练准确率图表已保存: {plot_path}")
+
+    def _plot_loss_curves(self, epochs):
+        """绘制损失曲线图表"""
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        fig.suptitle('Privileged Learning Training Losses', fontsize=16)
 
         # 1. 总损失曲线
         axes[0, 0].plot(epochs, self.train_losses, 'b-', label='Train Loss', alpha=0.7)
@@ -357,22 +419,23 @@ class PrivilegedTrainer:
         axes[0, 0].legend()
         axes[0, 0].grid(True, alpha=0.3)
 
-        # 2. 详细损失曲线
+        # 2. 教师和学生损失曲线
         axes[0, 1].plot(epochs, self.train_teacher_losses, 'b-', label='Train Teacher', alpha=0.7)
         axes[0, 1].plot(epochs, self.train_student_losses, 'g-', label='Train Student', alpha=0.7)
-        axes[0, 1].plot(epochs, self.train_distill_losses, 'orange', label='Train Distill', alpha=0.7)
-        axes[0, 1].set_title('Training Loss Components')
+        axes[0, 1].plot(epochs, self.val_teacher_losses, 'r-', label='Val Teacher', alpha=0.7)
+        axes[0, 1].plot(epochs, self.val_student_losses, 'orange', label='Val Student', alpha=0.7)
+        axes[0, 1].set_title('Teacher & Student Loss')
         axes[0, 1].set_xlabel('Epoch')
         axes[0, 1].set_ylabel('Loss')
         axes[0, 1].legend()
         axes[0, 1].grid(True, alpha=0.3)
 
-        # 3. 准确率曲线
-        axes[1, 0].plot(epochs, self.teacher_accuracies, 'b-', label='Teacher Acc', alpha=0.7)
-        axes[1, 0].plot(epochs, self.student_accuracies, 'r-', label='Student Acc', alpha=0.7)
-        axes[1, 0].set_title('Validation Accuracy')
+        # 3. 蒸馏损失曲线
+        axes[1, 0].plot(epochs, self.train_distill_losses, 'b-', label='Train Distill', alpha=0.7)
+        axes[1, 0].plot(epochs, self.val_distill_losses, 'r-', label='Val Distill', alpha=0.7)
+        axes[1, 0].set_title('Distillation Loss')
         axes[1, 0].set_xlabel('Epoch')
-        axes[1, 0].set_ylabel('Accuracy (%)')
+        axes[1, 0].set_ylabel('Loss')
         axes[1, 0].legend()
         axes[1, 0].grid(True, alpha=0.3)
 
@@ -386,12 +449,12 @@ class PrivilegedTrainer:
 
         plt.tight_layout()
 
-        # 保存图表
-        plot_path = os.path.join(self.output_dir, "training_plots.png")
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        # 保存损失图表
+        loss_plot_path = os.path.join(self.output_dir, "training_loss_plots.png")
+        plt.savefig(loss_plot_path, dpi=300, bbox_inches='tight')
         plt.close()
 
-        print(f"训练图表已保存: {plot_path}")
+        print(f"训练损失图表已保存: {loss_plot_path}")
 
     def train(self):
         """完整的训练流程"""
@@ -445,8 +508,12 @@ class PrivilegedTrainer:
             self.val_feature_align_losses.append(val_metrics['feature_align_loss'])
             self.val_common_sim_losses.append(val_metrics['common_sim_loss'])
             self.val_private_diff_losses.append(val_metrics['private_diff_loss'])
-            self.teacher_accuracies.append(val_metrics['teacher_acc'])
-            self.student_accuracies.append(val_metrics['student_acc'])
+
+            # 记录准确率 - 新增训练准确率
+            self.train_teacher_accuracies.append(train_metrics['teacher_acc'])
+            self.train_student_accuracies.append(train_metrics['student_acc'])
+            self.val_teacher_accuracies.append(val_metrics['teacher_acc'])
+            self.val_student_accuracies.append(val_metrics['student_acc'])
 
             # 更新最佳指标
             if val_metrics['total_loss'] < self.best_val_loss:
@@ -464,18 +531,15 @@ class PrivilegedTrainer:
             print(f"    • 教师损失: {train_metrics['teacher_loss']:.6f}")
             print(f"    • 学生损失: {train_metrics['student_loss']:.6f}")
             print(f"    • 蒸馏损失: {train_metrics['distill_loss']:.6f}")
-            print(f"    • 特征对齐损失: {train_metrics['feature_align_loss']:.6f}")
-            print(f"    • 公共特征相似损失: {train_metrics['common_sim_loss']:.6f}")
-            print(f"    • 私有特征差异损失: {train_metrics['private_diff_loss']:.6f}")
+            print(f"  📈 训练准确率:")
+            print(f"    • 教师: {train_metrics['teacher_acc']:.2f}%")
+            print(f"    • 学生: {train_metrics['student_acc']:.2f}%")
             print(f"  🎯 验证损失:")
             print(f"    • 总损失: {val_metrics['total_loss']:.6f}")
             print(f"    • 教师损失: {val_metrics['teacher_loss']:.6f}")
             print(f"    • 学生损失: {val_metrics['student_loss']:.6f}")
             print(f"    • 蒸馏损失: {val_metrics['distill_loss']:.6f}")
-            print(f"    • 特征对齐损失: {val_metrics['feature_align_loss']:.6f}")
-            print(f"    • 公共特征相似损失: {val_metrics['common_sim_loss']:.6f}")
-            print(f"    • 私有特征差异损失: {val_metrics['private_diff_loss']:.6f}")
-            print(f"  📈 准确率:")
+            print(f"  📈 验证准确率:")
             print(f"    • 教师: {val_metrics['teacher_acc']:.2f}%")
             print(f"    • 学生: {val_metrics['student_acc']:.2f}%")
             print(f"  ⏱️  时间: {epoch_time:.2f}s")
@@ -525,8 +589,10 @@ class PrivilegedTrainer:
             'val_teacher_losses': self.val_teacher_losses,
             'val_student_losses': self.val_student_losses,
             'val_distill_losses': self.val_distill_losses,
-            'teacher_accuracies': self.teacher_accuracies,
-            'student_accuracies': self.student_accuracies,
+            'train_teacher_accuracies': self.train_teacher_accuracies,  # 新增
+            'train_student_accuracies': self.train_student_accuracies,  # 新增
+            'val_teacher_accuracies': self.val_teacher_accuracies,
+            'val_student_accuracies': self.val_student_accuracies,
             'learning_rates': self.learning_rates,
             'best_val_loss': self.best_val_loss,
             'best_teacher_acc': self.best_teacher_acc,
@@ -576,8 +642,10 @@ class PrivilegedTrainer:
         self.val_teacher_losses = checkpoint.get('val_teacher_losses', [])
         self.val_student_losses = checkpoint.get('val_student_losses', [])
         self.val_distill_losses = checkpoint.get('val_distill_losses', [])
-        self.teacher_accuracies = checkpoint.get('teacher_accuracies', [])
-        self.student_accuracies = checkpoint.get('student_accuracies', [])
+        self.train_teacher_accuracies = checkpoint.get('train_teacher_accuracies', [])  # 新增
+        self.train_student_accuracies = checkpoint.get('train_student_accuracies', [])  # 新增
+        self.val_teacher_accuracies = checkpoint.get('val_teacher_accuracies', [])
+        self.val_student_accuracies = checkpoint.get('val_student_accuracies', [])
         self.learning_rates = checkpoint.get('learning_rates', [])
 
         self.best_val_loss = checkpoint.get('best_val_loss', float('inf'))

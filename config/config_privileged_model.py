@@ -8,9 +8,9 @@ class PrivilegedConfig:
 
     def __init__(self):
         # 模型参数
-        self.eeg_model_name = 'EEGNetv1'
-        self.image_model_name = 'PlacesNet'
-        self.image_model_type = 'rsscnn'
+        self.eeg_model_name = 'EEGNetv1'# EEGNetv1 EEGNetv4 ShallowFBCSPNet
+        self.image_model_name = 'PlacesNet' # AlexNet PlacesNet VGG
+        self.image_model_type = 'sscnn'
         self.in_chans = 64
         self.n_classes = 2
         self.input_window_samples = 2000
@@ -18,13 +18,13 @@ class PrivilegedConfig:
         self.common_dim = 512
         self.private_dim = 256
         self.dropout_rate = 0.5
-        self.alpha = 0.5  # 公共损失权重
+        self.alpha = 0.5 # 公共损失权重
         self.beta = 0.5  # 私有损失权重
         self.gamma = 0.3  # 蒸馏损失权重
-        self.temperature = 2.0 # 蒸馏温度
+        self.temperature = 0.2 # 蒸馏温度
 
         # 训练参数
-        self.epochs = 100
+        self.epochs = 50
         self.batch_size = 16
         self.lr = 1e-4
         self.momentum = 0.9

@@ -4,7 +4,7 @@ from braindecode.models import EEGNetv1, ShallowFBCSPNet, EEGNetv4
 
 
 class EEGFeatureExtractor(nn.Module):
-    def __init__(self, model_name="EEGNet", in_chans=64, n_classes=2, input_window_samples=2000):
+    def __init__(self, model_name="EEGNetv1", in_chans=64, n_classes=2, input_window_samples=2000):
         super(EEGFeatureExtractor, self).__init__()
 
         if model_name == "EEGNetv1":
@@ -166,8 +166,8 @@ class SSBCINet(nn.Module):
 
 if __name__ == "__main__":
     # 测试EEGNetv4模型
-    print("Testing EEGNetv4 model:")
-    model_v4 = EEGNetv4(input_window_samples=200, in_chans=64, n_classes=2)
+    print("Testing EEGNetv1 model:")
+    model_v4 = EEGNetv1(input_window_samples=200, in_chans=64, n_classes=2)
     print(model_v4)
 
     # 测试SSBCINet with EEGNetv4
