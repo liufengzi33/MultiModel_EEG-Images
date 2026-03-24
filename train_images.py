@@ -81,8 +81,11 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
     model = SSCNN(base_model_name=model_name).to(device)
     model.device = device
     criterion = nn.CrossEntropyLoss()
-
+    # AlexNet PlacesNet
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    # VGG
+    # optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
     # 更新历史记录以包含 F1 和 AUC
@@ -270,8 +273,10 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
 
     model = RSSCNN(base_model_name=model_name, lambda_r=lambda_r).to(device)
     model.device = device
-
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    # AlexNet placesNet
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    # VGG
+    # optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
     # 更新历史记录以包含 F1 和 AUC
@@ -706,7 +711,7 @@ if __name__ == "__main__":
     dataset = MyPP2Dataset(transform=cfg.transform, is_flipped=False)
 
     # 选择要训练的模型
-    train_sscnn_flag = True  # 设置为True训练SSCNN，False则不训练
+    train_sscnn_flag = False  # 设置为True训练SSCNN，False则不训练
     train_rsscnn_flag = True  # 设置为True训练RSSCNN，False则不训练
 
     # 训练SSCNN模型
