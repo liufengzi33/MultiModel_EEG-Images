@@ -62,7 +62,6 @@ class FusionNetwork(nn.Module):
             nn.ReLU(),
             nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
             nn.ReLU(),
-            # TODO 是不是加上归一化层更好呢
         )
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = nn.Sequential(

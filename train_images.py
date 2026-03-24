@@ -2,17 +2,18 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 from matplotlib import pyplot as plt
 import json
 import pandas as pd
 from datetime import datetime
+from sklearn.metrics import f1_score, roc_auc_score
 
 import config.config_image_model
-from MyPP2Dataset import MyPP2Dataset, create_dataloaders, create_subject_dataloaders
+from MyPP2Dataset import MyPP2Dataset, create_dataloaders
 from models.image_models import SSCNN, RSSCNN
-from utils.save_confusion_matrix import save_confusion_matrix
 from tqdm import tqdm
-
+import seaborn as sns
 from utils.early_stop import SchedulerEarlyStopper
 
 
@@ -20,7 +21,6 @@ class ImageModelTrainer:
     def __init__(self, model_type, base_model_name, timestamp):
         """
         图像模型训练器基类
-
         Args:
             model_type: 模型类型 ('sscnn' 或 'rsscnn')
             base_model_name: 基础模型名称
@@ -38,16 +38,14 @@ class ImageModelTrainer:
         # 基础目录
         self.base_dir = f"outputs/outputs_images/{self.model_type}/{self.base_model_name}/{self.timestamp}"
 
-        # 子目录
+        # 子目录 (已移除混淆矩阵目录)
         self.model_dir = os.path.join(self.base_dir, "models")
         self.plot_dir = os.path.join(self.base_dir, "plots")
-        self.confusion_matrix_dir = os.path.join(self.base_dir, "confusion_matrices")
         self.data_dir = os.path.join(self.base_dir, "training_data")
-        self.checkpoints_dir = os.path.join(self.base_dir, "checkpoints")  # 新增检查点目录
+        self.checkpoints_dir = os.path.join(self.base_dir, "checkpoints")
 
         # 创建所有目录
-        for directory in [self.model_dir, self.plot_dir, self.confusion_matrix_dir,
-                         self.data_dir, self.checkpoints_dir]:
+        for directory in [self.model_dir, self.plot_dir, self.data_dir, self.checkpoints_dir]:
             os.makedirs(directory, exist_ok=True)
 
         print(f"输出目录结构:")
@@ -55,7 +53,6 @@ class ImageModelTrainer:
         print(f"  - 模型目录: {self.model_dir}")
         print(f"  - 检查点目录: {self.checkpoints_dir}")
         print(f"  - 图像目录: {self.plot_dir}")
-        print(f"  - 混淆矩阵: {self.confusion_matrix_dir}")
         print(f"  - 训练数据: {self.data_dir}")
 
 
@@ -84,20 +81,18 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
     model = SSCNN(base_model_name=model_name).to(device)
     model.device = device
     criterion = nn.CrossEntropyLoss()
-    # AlexNet PlacesNet
+
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
-    # VGG
-    # optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
-    # 扩展历史记录以包含更多信息
+    # 更新历史记录以包含 F1 和 AUC
     history = {
         'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
+        'train_f1': [], 'val_f1': [], 'train_auc': [], 'val_auc': [],
         'learning_rates': [], 'epoch_times': [], 'best_epoch': 0,
-        'checkpoint_epochs': []  # 记录保存检查点的epoch
+        'checkpoint_epochs': []
     }
 
-    # 训练配置信息
     train_config = {
         'model_type': 'SSCNN',
         'base_model_name': model_name,
@@ -122,6 +117,10 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
         correct = 0
         total = 0
 
+        train_labels_list = []
+        train_preds_list = []
+        train_probs_list = []
+
         for left_imgs, right_imgs, _, _, labels in tqdm(train_loader, desc=f'Epoch {epoch + 1}/{num_epochs}'):
             left_imgs = left_imgs.to(device)
             right_imgs = right_imgs.to(device)
@@ -135,20 +134,37 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
             optimizer.step()
 
             running_loss += loss.item()
+            probs = F.softmax(outputs.data, dim=1)[:, 1]  # 提取正类别的概率
             _, predicted = torch.max(outputs.data, 1)
+
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+
+            train_labels_list.extend(labels.cpu().numpy())
+            train_preds_list.extend(predicted.cpu().numpy())
+            train_probs_list.extend(probs.cpu().numpy())
 
         train_loss = running_loss / len(train_loader)
         train_acc = 100 * correct / total
 
-        val_loss, val_acc, val_labels, val_preds = evaluate_sscnn(model, val_loader, criterion, return_preds=True)
+        # 计算训练集的 F1 和 AUC
+        train_f1 = f1_score(train_labels_list, train_preds_list, average='macro')
+        try:
+            train_auc = roc_auc_score(train_labels_list, train_probs_list)
+        except ValueError:
+            train_auc = 0.5  # 防止 batch 内只有单一类别导致报错
+
+        val_loss, val_acc, val_f1, val_auc = evaluate_sscnn(model, val_loader, criterion)
 
         # 记录历史
         history['train_loss'].append(train_loss)
         history['train_acc'].append(train_acc)
         history['val_loss'].append(val_loss)
         history['val_acc'].append(val_acc)
+        history['train_f1'].append(train_f1)
+        history['val_f1'].append(val_f1)
+        history['train_auc'].append(train_auc)
+        history['val_auc'].append(val_auc)
         history['learning_rates'].append(current_lr)
         history['epoch_times'].append((datetime.now() - epoch_start_time).total_seconds())
 
@@ -158,13 +174,6 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
         current_lr = optimizer.param_groups[0]['lr']
         if current_lr != old_lr:
             print(f"学习率更新: {old_lr:.6f} -> {current_lr:.6f}")
-
-        # 保存混淆矩阵
-        save_confusion_matrix(val_labels, val_preds,
-                              class_names=['Left', 'Right'],
-                              title=f"SSCNN {model_name} - Epoch {epoch + 1}",
-                              filename=os.path.join(trainer.confusion_matrix_dir, f"confmat_epoch{epoch + 1}.png")
-                              )
 
         # 1. 保存验证集最佳模型
         if val_acc > best_acc:
@@ -182,19 +191,12 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
                 'train_acc': train_acc,
                 'train_loss': train_loss,
                 'config': train_config,
-                'model_type': 'best_val'  # 标记为最佳验证模型
+                'model_type': 'best_val'
             }, model_path)
-
-            # 保存最佳混淆矩阵
-            save_confusion_matrix(val_labels, val_preds,
-                                  class_names=['Left', 'Right'],
-                                  title=f"SSCNN {model_name} - Best Val Epoch {epoch + 1}",
-                                  filename=os.path.join(trainer.confusion_matrix_dir, "confmat_best_val.png")
-                                  )
-            print(f"✅ 保存最佳验证模型 - 准确率: {val_acc:.2f}%")
+            print(f"✅ 保存最佳验证模型 - 准确率: {val_acc:.2f}%, F1: {val_f1:.4f}, AUC: {val_auc:.4f}")
 
         # 2. 每10个epoch保存检查点
-        if (epoch + 1) % 10 == 0 or epoch == 0:  # 第一个epoch也保存
+        if (epoch + 1) % 10 == 0 or epoch == 0:
             checkpoint_path = os.path.join(trainer.checkpoints_dir, f'checkpoint_epoch_{epoch + 1}.pth')
             torch.save({
                 'epoch': epoch,
@@ -212,8 +214,9 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
             history['checkpoint_epochs'].append(epoch + 1)
             print(f"📁 保存检查点 - Epoch {epoch + 1}")
 
-        print(f'Epoch [{epoch + 1}/{num_epochs}], Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, '
-              f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
+        print(f'Epoch [{epoch + 1}/{num_epochs}] | '
+              f'Train Loss: {train_loss:.4f}, Acc: {train_acc:.2f}%, F1: {train_f1:.4f}, AUC: {train_auc:.4f} | '
+              f'Val Loss: {val_loss:.4f}, Acc: {val_acc:.2f}%, F1: {val_f1:.4f}, AUC: {val_auc:.4f}')
 
         # 早停判断
         if early_stopper.step(optimizer):
@@ -267,19 +270,18 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
 
     model = RSSCNN(base_model_name=model_name, lambda_r=lambda_r).to(device)
     model.device = device
-    # AlexNet placesNet
-    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
-    # 扩展历史记录
+    # 更新历史记录以包含 F1 和 AUC
     history = {
         'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
+        'train_f1': [], 'val_f1': [], 'train_auc': [], 'val_auc': [],
         'learning_rates': [], 'epoch_times': [], 'best_epoch': 0,
         'checkpoint_epochs': []
     }
 
-    # 训练配置信息
     train_config = {
         'model_type': 'RSSCNN',
         'base_model_name': model_name,
@@ -305,6 +307,10 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
         correct = 0
         total = 0
 
+        train_labels_list = []
+        train_preds_list = []
+        train_probs_list = []
+
         for left_imgs, right_imgs, _, _, labels in tqdm(train_loader, desc=f'Epoch {epoch + 1}/{num_epochs}'):
             left_imgs, right_imgs, labels = left_imgs.to(device), right_imgs.to(device), labels.to(device)
 
@@ -316,20 +322,35 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
             optimizer.step()
 
             running_loss += loss.item()
+            probs = F.softmax(class_out.data, dim=1)[:, 1]
             _, predicted = torch.max(class_out.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
+            train_labels_list.extend(labels.cpu().numpy())
+            train_preds_list.extend(predicted.cpu().numpy())
+            train_probs_list.extend(probs.cpu().numpy())
+
         train_loss = running_loss / len(train_loader)
         train_acc = 100 * correct / total
 
-        val_loss, val_acc, val_labels, val_preds = evaluate_rsscnn(model, val_loader, return_preds=True)
+        train_f1 = f1_score(train_labels_list, train_preds_list, average='macro')
+        try:
+            train_auc = roc_auc_score(train_labels_list, train_probs_list)
+        except ValueError:
+            train_auc = 0.5
+
+        val_loss, val_acc, val_f1, val_auc = evaluate_rsscnn(model, val_loader)
 
         # 记录历史
         history['train_loss'].append(train_loss)
         history['train_acc'].append(train_acc)
         history['val_loss'].append(val_loss)
         history['val_acc'].append(val_acc)
+        history['train_f1'].append(train_f1)
+        history['val_f1'].append(val_f1)
+        history['train_auc'].append(train_auc)
+        history['val_auc'].append(val_auc)
         history['learning_rates'].append(current_lr)
         history['epoch_times'].append((datetime.now() - epoch_start_time).total_seconds())
 
@@ -339,13 +360,6 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
         current_lr = optimizer.param_groups[0]['lr']
         if current_lr != old_lr:
             print(f"学习率更新: {old_lr:.6f} -> {current_lr:.6f}")
-
-        # 保存混淆矩阵
-        save_confusion_matrix(val_labels, val_preds,
-                              class_names=['Left', 'Right'],
-                              title=f"RSSCNN {model_name} - Epoch {epoch + 1}",
-                              filename=os.path.join(trainer.confusion_matrix_dir, f"confmat_epoch{epoch + 1}.png")
-                              )
 
         # 1. 保存验证集最佳模型
         if val_acc > best_acc:
@@ -365,17 +379,10 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
                 'config': train_config,
                 'model_type': 'best_val'
             }, model_path)
-
-            # 保存最佳混淆矩阵
-            save_confusion_matrix(val_labels, val_preds,
-                                  class_names=['Left', 'Right'],
-                                  title=f"RSSCNN {model_name} - Best Val Epoch {epoch + 1}",
-                                  filename=os.path.join(trainer.confusion_matrix_dir, "confmat_best_val.png")
-                                  )
-            print(f"✅ 保存最佳验证模型 - 准确率: {val_acc:.2f}%")
+            print(f"✅ 保存最佳验证模型 - 准确率: {val_acc:.2f}%, F1: {val_f1:.4f}, AUC: {val_auc:.4f}")
 
         # 2. 每10个epoch保存检查点
-        if (epoch + 1) % 10 == 0 or epoch == 0:  # 第一个epoch也保存
+        if (epoch + 1) % 10 == 0 or epoch == 0:
             checkpoint_path = os.path.join(trainer.checkpoints_dir, f'checkpoint_epoch_{epoch + 1}.pth')
             torch.save({
                 'epoch': epoch,
@@ -393,9 +400,9 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
             history['checkpoint_epochs'].append(epoch + 1)
             print(f"📁 保存检查点 - Epoch {epoch + 1}")
 
-        print(f"Epoch [{epoch + 1}/{num_epochs}], "
-              f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%, "
-              f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+        print(f"Epoch [{epoch + 1}/{num_epochs}] | "
+              f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.2f}%, F1: {train_f1:.4f}, AUC: {train_auc:.4f} | "
+              f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.2f}%, F1: {val_f1:.4f}, AUC: {val_auc:.4f}")
 
         # 早停判断
         if early_stopper.step(optimizer):
@@ -440,6 +447,10 @@ def save_training_results(history, train_config, trainer, model, model_name):
         'train_acc': history['train_acc'],
         'val_loss': history['val_loss'],
         'val_acc': history['val_acc'],
+        'train_f1': history['train_f1'],
+        'val_f1': history['val_f1'],
+        'train_auc': history['train_auc'],
+        'val_auc': history['val_auc'],
         'learning_rate': history['learning_rates'],
         'epoch_time_seconds': history['epoch_times']
     }
@@ -452,12 +463,10 @@ def save_training_results(history, train_config, trainer, model, model_name):
     summary = {
         'best_epoch': history['best_epoch'],
         'best_val_accuracy': max(history['val_acc']) if history['val_acc'] else 0,
-        'best_train_accuracy': max(history['train_acc']) if history['train_acc'] else 0,
-        'final_val_accuracy': history['val_acc'][-1] if history['val_acc'] else 0,
-        'final_train_accuracy': history['train_acc'][-1] if history['train_acc'] else 0,
+        'best_val_f1': max(history['val_f1']) if history['val_f1'] else 0,
+        'best_val_auc': max(history['val_auc']) if history['val_auc'] else 0,
         'total_training_time_seconds': sum(history['epoch_times']),
         'total_epochs': len(history['train_loss']),
-        'final_learning_rate': history['learning_rates'][-1] if history['learning_rates'] else 0,
         'checkpoint_epochs': history['checkpoint_epochs']
     }
 
@@ -465,68 +474,99 @@ def save_training_results(history, train_config, trainer, model, model_name):
     with open(summary_path, 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 
-    # 4. 绘制并保存训练曲线
-    plot_training_curves(history, model_name, train_config['base_model_name'], trainer.plot_dir)
+    # 4. 绘制并保存所有训练曲线
+    plot_all_curves(history, model_name, train_config['base_model_name'], trainer.plot_dir)
 
     print(f"\n训练结果已保存到: {trainer.base_dir}")
     print(f"最佳验证准确率: {summary['best_val_accuracy']:.2f}% (第 {summary['best_epoch']} 轮)")
-    print(f"检查点保存轮次: {summary['checkpoint_epochs']}")
     print(f"总训练时间: {summary['total_training_time_seconds']:.2f} 秒")
 
 
-def plot_training_curves(history, model_name, base_model_name, plot_dir):
-    """绘制训练曲线"""
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+def plot_all_curves(history, model_name, base_model_name, plot_dir):
+    """
+    分别绘制并保存三个图表（Seaborn 学术风格）:
+    1. Loss和Accuracy (双子图)
+    2. F1 Score (单图)
+    3. AUC-ROC (单图)
+    """
+
+    # 设置 seaborn 学术风格
+    sns.set_theme(style="whitegrid", context="paper", font_scale=1.2)
 
     epochs = range(1, len(history['train_loss']) + 1)
 
-    # 损失曲线
-    ax1.plot(epochs, history['train_loss'], 'b-', label='Train Loss', linewidth=2)
-    ax1.plot(epochs, history['val_loss'], 'r-', label='Val Loss', linewidth=2)
-    ax1.set_title(f'{model_name} {base_model_name} - Loss')
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Loss')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
+    # ==========================
+    # 图 1: Loss 和 Accuracy (双子图)
+    # ==========================
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-    # 准确率曲线
-    ax2.plot(epochs, history['train_acc'], 'b-', label='Train Acc', linewidth=2)
-    ax2.plot(epochs, history['val_acc'], 'r-', label='Val Acc', linewidth=2)
-    ax2.set_title(f'{model_name} {base_model_name} - Accuracy')
-    ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Accuracy (%)')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
+    # Loss 子图
+    ax1.plot(epochs, history['train_loss'], linestyle='-', marker='o', markersize=4, label='Train Loss', linewidth=2,
+             alpha=0.8)
+    ax1.plot(epochs, history['val_loss'], linestyle='-', marker='s', markersize=4, label='Val Loss', linewidth=2,
+             alpha=0.8)
+    ax1.set_title(f'{model_name} {base_model_name} - Loss', fontweight='bold')
+    ax1.set_xlabel('Epoch', fontweight='bold')
+    ax1.set_ylabel('Loss', fontweight='bold')
+    ax1.legend(loc='upper right', frameon=True, shadow=True)
 
-    # 学习率曲线
-    ax3.plot(epochs, history['learning_rates'], 'g-', label='Learning Rate', linewidth=2)
-    ax3.set_title(f'{model_name} {base_model_name} - Learning Rate')
-    ax3.set_xlabel('Epoch')
-    ax3.set_ylabel('Learning Rate')
-    ax3.set_yscale('log')
-    ax3.legend()
-    ax3.grid(True, alpha=0.3)
-
-    # 每个epoch的训练时间
-    ax4.plot(epochs, history['epoch_times'], 'purple', label='Epoch Time', linewidth=2)
-    ax4.set_title(f'{model_name} {base_model_name} - Epoch Training Time')
-    ax4.set_xlabel('Epoch')
-    ax4.set_ylabel('Time (seconds)')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
+    # Accuracy 子图
+    ax2.plot(epochs, history['train_acc'], linestyle='-', marker='o', markersize=4, label='Train Acc', linewidth=2,
+             alpha=0.8)
+    ax2.plot(epochs, history['val_acc'], linestyle='-', marker='s', markersize=4, label='Val Acc', linewidth=2,
+             alpha=0.8)
+    ax2.set_title(f'{model_name} {base_model_name} - Accuracy', fontweight='bold')
+    ax2.set_xlabel('Epoch', fontweight='bold')
+    ax2.set_ylabel('Accuracy (%)', fontweight='bold')
+    ax2.legend(loc='lower right', frameon=True, shadow=True)
 
     plt.tight_layout()
-
-    # 保存图像
-    plot_path = os.path.join(plot_dir, "training_curves.png")
-    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    loss_acc_path = os.path.join(plot_dir, "loss_acc_curves.png")
+    plt.savefig(loss_acc_path, dpi=300, bbox_inches='tight')
     plt.close()
 
-    print(f"训练曲线已保存: {plot_path}")
+    # ==========================
+    # 图 2: F1 分数 (单独的图)
+    # ==========================
+    plt.figure(figsize=(7, 5))
+    plt.plot(epochs, history['train_f1'], linestyle='-', marker='o', markersize=4, label='Train F1', linewidth=2,
+             alpha=0.8)
+    plt.plot(epochs, history['val_f1'], linestyle='-', marker='s', markersize=4, label='Val F1', linewidth=2, alpha=0.8)
+    plt.title(f'{model_name} {base_model_name} - F1 Score', fontweight='bold')
+    plt.xlabel('Epoch', fontweight='bold')
+    plt.ylabel('F1 Score', fontweight='bold')
+    plt.legend(loc='lower right', frameon=True, shadow=True)
 
+    plt.tight_layout()
+    f1_path = os.path.join(plot_dir, "f1_curve.png")
+    plt.savefig(f1_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # ==========================
+    # 图 3: AUC-ROC (单独的图)
+    # ==========================
+    plt.figure(figsize=(7, 5))
+    plt.plot(epochs, history['train_auc'], linestyle='-', marker='o', markersize=4, label='Train AUC', linewidth=2,
+             alpha=0.8)
+    plt.plot(epochs, history['val_auc'], linestyle='-', marker='s', markersize=4, label='Val AUC', linewidth=2,
+             alpha=0.8)
+    plt.title(f'{model_name} {base_model_name} - AUC-ROC', fontweight='bold')
+    plt.xlabel('Epoch', fontweight='bold')
+    plt.ylabel('AUC-ROC', fontweight='bold')
+    plt.legend(loc='lower right', frameon=True, shadow=True)
+
+    plt.tight_layout()
+    auc_path = os.path.join(plot_dir, "auc_roc_curve.png")
+    plt.savefig(auc_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # 重置 matplotlib 风格，避免影响后续代码的其他绘图
+    sns.reset_orig()
+
+    print(f"✅ 三个绘图已保存:\n  1. {loss_acc_path}\n  2. {f1_path}\n  3. {auc_path}")
 
 # 评估SSCNN模型
-def evaluate_sscnn(model, dataloader, criterion, return_preds=False):
+def evaluate_sscnn(model, dataloader, criterion):
     model.eval()
     total_loss = 0.0
     correct = 0
@@ -534,6 +574,7 @@ def evaluate_sscnn(model, dataloader, criterion, return_preds=False):
 
     all_labels = []
     all_preds = []
+    all_probs = []
 
     with torch.no_grad():
         for left_imgs, right_imgs, _, _, labels in dataloader:
@@ -545,31 +586,38 @@ def evaluate_sscnn(model, dataloader, criterion, return_preds=False):
             loss = criterion(outputs, labels)
 
             total_loss += loss.item()
+            probs = F.softmax(outputs.data, dim=1)[:, 1]
             _, predicted = torch.max(outputs.data, 1)
+
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-            if return_preds:
-                all_labels.extend(labels.cpu().numpy())
-                all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(predicted.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
 
     avg_loss = total_loss / len(dataloader)
     accuracy = 100 * correct / total
 
-    if return_preds:
-        return avg_loss, accuracy, all_labels, all_preds
-    else:
-        return avg_loss, accuracy
+    f1 = f1_score(all_labels, all_preds, average='macro')
+    try:
+        auc = roc_auc_score(all_labels, all_probs)
+    except ValueError:
+        auc = 0.5
+
+    return avg_loss, accuracy, f1, auc
 
 
 # 评估RSSCNN模型
-def evaluate_rsscnn(model, dataloader, return_preds=False):
+def evaluate_rsscnn(model, dataloader):
     model.eval()
     total_loss = 0.0
     correct = 0
     total = 0
+
     all_labels = []
     all_preds = []
+    all_probs = []
 
     with torch.no_grad():
         for left_imgs, right_imgs, _, _, labels in dataloader:
@@ -581,20 +629,26 @@ def evaluate_rsscnn(model, dataloader, return_preds=False):
             loss = model.compute_loss(class_out, rank1, rank2, labels)
 
             total_loss += loss.item()
+            probs = F.softmax(class_out.data, dim=1)[:, 1]
             _, predicted = torch.max(class_out.data, 1)
+
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-            if return_preds:
-                all_labels.extend(labels.cpu().numpy())
-                all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(predicted.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
 
     avg_loss = total_loss / len(dataloader)
     accuracy = 100 * correct / total
 
-    if return_preds:
-        return avg_loss, accuracy, all_labels, all_preds
-    return avg_loss, accuracy
+    f1 = f1_score(all_labels, all_preds, average='macro')
+    try:
+        auc = roc_auc_score(all_labels, all_probs)
+    except ValueError:
+        auc = 0.5
+
+    return avg_loss, accuracy, f1, auc
 
 
 def run_sscnn_training(cfg, dataset):
@@ -620,7 +674,7 @@ def run_sscnn_training(cfg, dataset):
     return sscnn_model, sscnn_history, output_dir
 
 
-def run_rsscnn_training(cfg, dataset_1):
+def run_rsscnn_training(cfg, dataset):
     """运行RSSCNN训练"""
     print("\nTraining RSSCNN with", cfg.base_model_name)
     early_stopper_rsscnn = SchedulerEarlyStopper(max_plateaus=cfg.max_lr_plateaus)
@@ -637,7 +691,7 @@ def run_rsscnn_training(cfg, dataset_1):
         weight_decay=cfg.weight_decay,
         factor=cfg.factor,
         patience=cfg.patience,
-        my_dataset_1=dataset_1
+        my_dataset_1=dataset
     )
 
     print(f"RSSCNN训练完成！结果保存在: {output_dir}")
@@ -649,18 +703,18 @@ if __name__ == "__main__":
     cfg = config.config_image_model.Config()
 
     # 创建数据集
-    dataset_1 = MyPP2Dataset(transform=cfg.transform, is_flipped=False)
+    dataset = MyPP2Dataset(transform=cfg.transform, is_flipped=False)
 
     # 选择要训练的模型
     train_sscnn_flag = True  # 设置为True训练SSCNN，False则不训练
-    train_rsscnn_flag = False  # 设置为True训练RSSCNN，False则不训练
+    train_rsscnn_flag = True  # 设置为True训练RSSCNN，False则不训练
 
     # 训练SSCNN模型
     if train_sscnn_flag:
-        sscnn_model, sscnn_history, sscnn_dir = run_sscnn_training(cfg, dataset_1)
+        sscnn_model, sscnn_history, sscnn_dir = run_sscnn_training(cfg, dataset)
 
     # 训练RSSCNN模型
     if train_rsscnn_flag:
-        rsscnn_model, rsscnn_history, rsscnn_dir = run_rsscnn_training(cfg, dataset_1)
+        rsscnn_model, rsscnn_history, rsscnn_dir = run_rsscnn_training(cfg, dataset)
 
     print("所有训练任务完成！")
