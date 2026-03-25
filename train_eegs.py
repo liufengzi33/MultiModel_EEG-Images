@@ -4,8 +4,10 @@ import torch.optim as optim
 import config.config_eeg_model
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import seaborn as sns  # 新增 seaborn
 import os
 from datetime import datetime
+from sklearn.metrics import f1_score, roc_auc_score  # 新增指标
 
 from MyPP2Dataset import MyPP2Dataset, create_dataloaders
 from models.eeg_models import EEGFeatureExtractor, EEGFusionNetwork, SSBCINet
@@ -21,29 +23,30 @@ class EEGTrainer:
                  factor=0.1,
                  max_plateaus=4,
                  base_model_name="EEGNet",
+                 subject_id="01gh",  # 新增 subject_id 参数
                  output_base_dir="outputs/outputs_eeg"):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
 
-        # 根据基础模型名称创建输出目录
-        self.output_base_dir = os.path.join(output_base_dir, base_model_name)
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # 保存为实例变量
+        # 根据基础模型名称和被试ID创建输出目录
+        self.output_base_dir = os.path.join(output_base_dir, base_model_name, subject_id)
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.model_output_dir = os.path.join(self.output_base_dir, self.timestamp, "models")
         self.plot_output_dir = os.path.join(self.output_base_dir, self.timestamp, "plots")
-        self.checkpoint_output_dir = os.path.join(self.output_base_dir, self.timestamp, "checkpoints")  # 新增checkpoints目录
+        self.checkpoint_output_dir = os.path.join(self.output_base_dir, self.timestamp, "checkpoints")
 
         # 创建目录
         os.makedirs(self.model_output_dir, exist_ok=True)
         os.makedirs(self.plot_output_dir, exist_ok=True)
-        os.makedirs(self.checkpoint_output_dir, exist_ok=True)  # 创建checkpoints目录
+        os.makedirs(self.checkpoint_output_dir, exist_ok=True)
 
         print(f"Output directories created:")
         print(f"  - Base: {self.output_base_dir}")
         print(f"  - Models: {self.model_output_dir}")
         print(f"  - Plots: {self.plot_output_dir}")
-        print(f"  - Checkpoints: {self.checkpoint_output_dir}")  # 打印checkpoints目录
+        print(f"  - Checkpoints: {self.checkpoint_output_dir}")
 
         # 损失函数和优化器
         self.criterion = nn.BCEWithLogitsLoss()
@@ -54,12 +57,13 @@ class EEGTrainer:
         # 使用SchedulerEarlyStopper
         self.early_stopper = SchedulerEarlyStopper(max_plateaus=max_plateaus)
 
-        # 训练记录
-        self.train_losses = []
-        self.val_losses = []
-        self.train_accuracies = []
-        self.val_accuracies = []
+        # 训练记录 (新增了 F1 和 AUC 的列表)
+        self.train_losses, self.val_losses = [], []
+        self.train_accuracies, self.val_accuracies = [], []
+        self.train_f1s, self.val_f1s = [], []
+        self.train_aucs, self.val_aucs = [], []
         self.learning_rates = []
+
         self.base_model_name = base_model_name
 
     def train_epoch(self):
@@ -68,9 +72,12 @@ class EEGTrainer:
         correct = 0
         total = 0
 
+        all_labels = []
+        all_preds = []
+        all_probs = []
+
         pbar = tqdm(self.train_loader, desc='Training')
         for batch_idx, (left_img, right_img, left_eeg, right_eeg, labels) in enumerate(pbar):
-            # 只使用EEG数据
             left_eeg = left_eeg.to(self.device)
             right_eeg = right_eeg.to(self.device)
             labels = labels.float().to(self.device)
@@ -78,7 +85,6 @@ class EEGTrainer:
             # 前向传播
             self.optimizer.zero_grad()
             logits = self.model(left_eeg, right_eeg)
-
             loss = self.criterion(logits, labels)
 
             # 反向传播
@@ -87,9 +93,16 @@ class EEGTrainer:
 
             # 统计
             running_loss += loss.item()
-            predictions = (torch.sigmoid(logits) > 0.5).float()
+            probs = torch.sigmoid(logits)
+            predictions = (probs > 0.5).float()
+
             correct += (predictions == labels).sum().item()
             total += labels.size(0)
+
+            # 收集用于计算 F1 和 AUC 的数据
+            all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(predictions.cpu().numpy())
+            all_probs.extend(probs.detach().cpu().numpy())
 
             # 更新进度条
             pbar.set_postfix({
@@ -100,13 +113,23 @@ class EEGTrainer:
         epoch_loss = running_loss / len(self.train_loader)
         epoch_acc = correct / total * 100
 
-        return epoch_loss, epoch_acc
+        epoch_f1 = f1_score(all_labels, all_preds, average='macro')
+        try:
+            epoch_auc = roc_auc_score(all_labels, all_probs)
+        except ValueError:
+            epoch_auc = 0.5  # 防止 batch 内只有单一类别导致报错
+
+        return epoch_loss, epoch_acc, epoch_f1, epoch_auc
 
     def validate_epoch(self):
         self.model.eval()
         running_loss = 0.0
         correct = 0
         total = 0
+
+        all_labels = []
+        all_preds = []
+        all_probs = []
 
         with torch.no_grad():
             for left_img, right_img, left_eeg, right_eeg, labels in self.val_loader:
@@ -118,14 +141,26 @@ class EEGTrainer:
                 loss = self.criterion(logits, labels)
 
                 running_loss += loss.item()
-                predictions = (torch.sigmoid(logits) > 0.5).float()
+                probs = torch.sigmoid(logits)
+                predictions = (probs > 0.5).float()
+
                 correct += (predictions == labels).sum().item()
                 total += labels.size(0)
+
+                all_labels.extend(labels.cpu().numpy())
+                all_preds.extend(predictions.cpu().numpy())
+                all_probs.extend(probs.cpu().numpy())
 
         epoch_loss = running_loss / len(self.val_loader)
         epoch_acc = correct / total * 100
 
-        return epoch_loss, epoch_acc
+        epoch_f1 = f1_score(all_labels, all_preds, average='macro')
+        try:
+            epoch_auc = roc_auc_score(all_labels, all_probs)
+        except ValueError:
+            epoch_auc = 0.5
+
+        return epoch_loss, epoch_acc, epoch_f1, epoch_auc
 
     def train(self, epochs=50):
         print(f"Starting training on {self.device}")
@@ -141,10 +176,10 @@ class EEGTrainer:
             print('-' * 50)
 
             # 训练
-            train_loss, train_acc = self.train_epoch()
+            train_loss, train_acc, train_f1, train_auc = self.train_epoch()
 
             # 验证
-            val_loss, val_acc = self.validate_epoch()
+            val_loss, val_acc, val_f1, val_auc = self.validate_epoch()
 
             # 学习率调度
             self.scheduler.step(val_loss)
@@ -152,19 +187,23 @@ class EEGTrainer:
             # 检查早停条件
             should_stop = self.early_stopper.step(self.optimizer)
 
-            # 记录
+            # 记录所有指标
             self.train_losses.append(train_loss)
             self.val_losses.append(val_loss)
             self.train_accuracies.append(train_acc)
             self.val_accuracies.append(val_acc)
+            self.train_f1s.append(train_f1)
+            self.val_f1s.append(val_f1)
+            self.train_aucs.append(train_auc)
+            self.val_aucs.append(val_auc)
             self.learning_rates.append(self.optimizer.param_groups[0]['lr'])
 
-            print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
-            print(f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
+            print(f'Train Loss: {train_loss:.4f}, Acc: {train_acc:.2f}%, F1: {train_f1:.4f}, AUC: {train_auc:.4f}')
+            print(f'Val Loss: {val_loss:.4f}, Acc: {val_acc:.2f}%, F1: {val_f1:.4f}, AUC: {val_auc:.4f}')
             print(f'Learning Rate: {self.optimizer.param_groups[0]["lr"]:.6f}')
             print(f'Plateau count: {self.early_stopper.plateau_count}/{self.early_stopper.max_plateaus}')
 
-            # 保存最佳模型（仍然保存在models文件夹）
+            # 保存最佳模型
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
                 model_path = os.path.join(self.model_output_dir, f'best_model.pth')
@@ -175,6 +214,8 @@ class EEGTrainer:
                     'scheduler_state_dict': self.scheduler.state_dict(),
                     'val_acc': val_acc,
                     'val_loss': val_loss,
+                    'val_f1': val_f1,
+                    'val_auc': val_auc,
                     'plateau_count': self.early_stopper.plateau_count,
                     'timestamp': self.timestamp,
                     'base_model_name': self.base_model_name,
@@ -186,7 +227,7 @@ class EEGTrainer:
                 }, model_path)
                 print(f'Best model saved with validation accuracy: {val_acc:.2f}% at {model_path}')
 
-            # 每10个epoch保存一次检查点（保存到checkpoints文件夹）
+            # 每10个epoch保存一次检查点
             if (epoch + 1) % 10 == 0:
                 checkpoint_path = os.path.join(self.checkpoint_output_dir, f'checkpoint_epoch_{epoch + 1}.pth')
                 torch.save({
@@ -194,18 +235,18 @@ class EEGTrainer:
                     'model_state_dict': self.model.state_dict(),
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'scheduler_state_dict': self.scheduler.state_dict(),
-                    'train_loss': train_loss,
-                    'val_loss': val_loss,
-                    'train_acc': train_acc,
-                    'val_acc': val_acc,
                     'timestamp': self.timestamp,
                     'base_model_name': self.base_model_name,
                     'training_history': {
-                        'train_losses': self.train_losses[:epoch+1],
-                        'val_losses': self.val_losses[:epoch+1],
-                        'train_accuracies': self.train_accuracies[:epoch+1],
-                        'val_accuracies': self.val_accuracies[:epoch+1],
-                        'learning_rates': self.learning_rates[:epoch+1]
+                        'train_losses': self.train_losses[:epoch + 1],
+                        'val_losses': self.val_losses[:epoch + 1],
+                        'train_accuracies': self.train_accuracies[:epoch + 1],
+                        'val_accuracies': self.val_accuracies[:epoch + 1],
+                        'train_f1s': self.train_f1s[:epoch + 1],
+                        'val_f1s': self.val_f1s[:epoch + 1],
+                        'train_aucs': self.train_aucs[:epoch + 1],
+                        'val_aucs': self.val_aucs[:epoch + 1],
+                        'learning_rates': self.learning_rates[:epoch + 1]
                     }
                 }, checkpoint_path)
                 print(f'Checkpoint saved at {checkpoint_path}')
@@ -216,17 +257,13 @@ class EEGTrainer:
                     f'Early stopping at epoch {epoch + 1} due to {self.early_stopper.max_plateaus} learning rate plateaus')
                 break
 
-        # 训练结束后保存最终模型（仍然保存在models文件夹）
+        # 训练结束后保存最终模型
         final_model_path = os.path.join(self.model_output_dir, 'final_model.pth')
         torch.save({
             'epoch': epochs,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
-            'train_loss': train_loss,
-            'val_loss': val_loss,
-            'train_acc': train_acc,
-            'val_acc': val_acc,
             'timestamp': self.timestamp,
             'base_model_name': self.base_model_name,
             'training_history': {
@@ -234,6 +271,10 @@ class EEGTrainer:
                 'val_losses': self.val_losses,
                 'train_accuracies': self.train_accuracies,
                 'val_accuracies': self.val_accuracies,
+                'train_f1s': self.train_f1s,
+                'val_f1s': self.val_f1s,
+                'train_aucs': self.train_aucs,
+                'val_aucs': self.val_aucs,
                 'learning_rates': self.learning_rates
             }
         }, final_model_path)
@@ -245,46 +286,93 @@ class EEGTrainer:
         return best_val_acc
 
     def plot_training_curves(self):
-        plt.figure(figsize=(15, 5))
+        """完全复刻图像模型的seaborn风格三图绘制方式"""
 
-        # 损失曲线
-        plt.subplot(1, 2, 1)
-        plt.plot(self.train_losses, label='Train Loss', linewidth=2)
-        plt.plot(self.val_losses, label='Val Loss', linewidth=2)
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.legend()
-        plt.title(f'{self.base_model_name} - Training and Validation Loss')
-        plt.grid(True, alpha=0.45)
+        # 设置 seaborn 学术风格
+        sns.set_theme(style="whitegrid", context="paper", font_scale=1.2)
 
-        # 准确率曲线
-        plt.subplot(1, 2, 2)
-        plt.plot(self.train_accuracies, label='Train Accuracy', linewidth=2)
-        plt.plot(self.val_accuracies, label='Val Accuracy', linewidth=2)
-        plt.xlabel('Epoch')
-        plt.ylabel('Accuracy (%)')
-        plt.legend()
-        plt.title(f'{self.base_model_name} - Training and Validation Accuracy')
-        plt.grid(True, alpha=0.45)
+        epochs = range(1, len(self.train_losses) + 1)
+
+        # ==========================
+        # 图 1: Loss 和 Accuracy (双子图)
+        # ==========================
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+        # Loss 子图
+        ax1.plot(epochs, self.train_losses, linestyle='-', marker='o', markersize=4, label='Train Loss', linewidth=2,
+                 alpha=0.8)
+        ax1.plot(epochs, self.val_losses, linestyle='-', marker='s', markersize=4, label='Val Loss', linewidth=2,
+                 alpha=0.8)
+        ax1.set_title(f'{self.base_model_name} - Loss', fontweight='bold')
+        ax1.set_xlabel('Epoch', fontweight='bold')
+        ax1.set_ylabel('Loss', fontweight='bold')
+        ax1.legend(loc='upper right', frameon=True, shadow=True)
+
+        # Accuracy 子图
+        ax2.plot(epochs, self.train_accuracies, linestyle='-', marker='o', markersize=4, label='Train Acc', linewidth=2,
+                 alpha=0.8)
+        ax2.plot(epochs, self.val_accuracies, linestyle='-', marker='s', markersize=4, label='Val Acc', linewidth=2,
+                 alpha=0.8)
+        ax2.set_title(f'{self.base_model_name} - Accuracy', fontweight='bold')
+        ax2.set_xlabel('Epoch', fontweight='bold')
+        ax2.set_ylabel('Accuracy (%)', fontweight='bold')
+        ax2.legend(loc='lower right', frameon=True, shadow=True)
 
         plt.tight_layout()
+        loss_acc_path = os.path.join(self.plot_output_dir, "loss_acc_curves.png")
+        plt.savefig(loss_acc_path, dpi=300, bbox_inches='tight')
+        plt.close()
 
-        # 保存图像
-        plot_path = os.path.join(self.plot_output_dir, 'training_curves.png')
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        print(f'Training curves saved at {plot_path}')
-        plt.show()
+        # ==========================
+        # 图 2: F1 分数 (单独的图)
+        # ==========================
+        plt.figure(figsize=(7, 5))
+        plt.plot(epochs, self.train_f1s, linestyle='-', marker='o', markersize=4, label='Train F1', linewidth=2,
+                 alpha=0.8)
+        plt.plot(epochs, self.val_f1s, linestyle='-', marker='s', markersize=4, label='Val F1', linewidth=2, alpha=0.8)
+        plt.title(f'{self.base_model_name} - F1 Score', fontweight='bold')
+        plt.xlabel('Epoch', fontweight='bold')
+        plt.ylabel('F1 Score', fontweight='bold')
+        plt.legend(loc='lower right', frameon=True, shadow=True)
 
-        # 保存训练数据为文本文件
+        plt.tight_layout()
+        f1_path = os.path.join(self.plot_output_dir, "f1_curve.png")
+        plt.savefig(f1_path, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        # ==========================
+        # 图 3: AUC-ROC (单独的图)
+        # ==========================
+        plt.figure(figsize=(7, 5))
+        plt.plot(epochs, self.train_aucs, linestyle='-', marker='o', markersize=4, label='Train AUC', linewidth=2,
+                 alpha=0.8)
+        plt.plot(epochs, self.val_aucs, linestyle='-', marker='s', markersize=4, label='Val AUC', linewidth=2,
+                 alpha=0.8)
+        plt.title(f'{self.base_model_name} - AUC-ROC', fontweight='bold')
+        plt.xlabel('Epoch', fontweight='bold')
+        plt.ylabel('AUC-ROC', fontweight='bold')
+        plt.legend(loc='lower right', frameon=True, shadow=True)
+
+        plt.tight_layout()
+        auc_path = os.path.join(self.plot_output_dir, "auc_roc_curve.png")
+        plt.savefig(auc_path, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        sns.reset_orig()
+        print(f"✅ 三个绘图已保存:\n  1. {loss_acc_path}\n  2. {f1_path}\n  3. {auc_path}")
+
+        # 保存包含所有指标的数据为文本文件
         data_path = os.path.join(self.plot_output_dir, 'training_data.txt')
         with open(data_path, 'w') as f:
             f.write(f"# Training Data for {self.base_model_name}\n")
             f.write(f"# Timestamp: {self.timestamp}\n")
             f.write(f"# Best Validation Accuracy: {max(self.val_accuracies):.2f}%\n")
-            f.write("Epoch,Train_Loss,Val_Loss,Train_Acc,Val_Acc,Learning_Rate\n")
+            f.write("Epoch,Train_Loss,Val_Loss,Train_Acc,Val_Acc,Train_F1,Val_F1,Train_AUC,Val_AUC,Learning_Rate\n")
             for i in range(len(self.train_losses)):
                 f.write(f"{i + 1},{self.train_losses[i]:.6f},{self.val_losses[i]:.6f},"
                         f"{self.train_accuracies[i]:.2f},{self.val_accuracies[i]:.2f},"
+                        f"{self.train_f1s[i]:.4f},{self.val_f1s[i]:.4f},"
+                        f"{self.train_aucs[i]:.4f},{self.val_aucs[i]:.4f},"
                         f"{self.learning_rates[i]:.8f}\n")
         print(f'Training data saved at {data_path}')
 
@@ -303,7 +391,7 @@ def main():
         img_dir="data",
         eeg_dir="data/EEG/seg_eeg_data",
         is_flipped=False,
-        subject_id="01gh"
+        subject_id=cfg.subject_id
     )
 
     # 创建数据加载器
@@ -333,7 +421,7 @@ def main():
     print(f"Base model: {cfg.base_model_name}")
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # 创建训练器并开始训练
+    # 创建训练器并开始训练（新增传入了 cfg.subject_id）
     trainer = EEGTrainer(
         model,
         train_loader,
@@ -345,13 +433,14 @@ def main():
         factor=cfg.factor,
         max_plateaus=getattr(cfg, 'max_plateaus', 4),
         base_model_name=cfg.base_model_name,
+        subject_id=cfg.subject_id,  # 将配置的被试ID传给训练器以便创建独立文件夹
         output_base_dir="outputs/outputs_eeg"
     )
     best_acc = trainer.train(epochs=cfg.num_epochs)
 
     print(f"\nTraining completed! Best validation accuracy: {best_acc:.2f}%")
 
-    # 修正：从正确的路径加载最佳模型
+    # 从正确的路径加载最佳模型
     best_model_path = os.path.join(trainer.model_output_dir, 'best_model.pth')
     if os.path.exists(best_model_path):
         checkpoint = torch.load(best_model_path)
