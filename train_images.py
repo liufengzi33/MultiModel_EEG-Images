@@ -15,7 +15,9 @@ from models.image_models import SSCNN, RSSCNN
 from tqdm import tqdm
 import seaborn as sns
 from utils.early_stop import SchedulerEarlyStopper
+import random
 
+# random.seed(40)
 
 class ImageModelTrainer:
     def __init__(self, model_type, base_model_name, timestamp):
@@ -82,9 +84,9 @@ def train_sscnn(model_name='AlexNet', num_epochs=300, lr=0.001, batch_size=4, ea
     model.device = device
     criterion = nn.CrossEntropyLoss()
     # AlexNet PlacesNet
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     # VGG
-    # optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
@@ -274,9 +276,9 @@ def train_rsscnn(model_name='AlexNet', num_epochs=300, lr=0.001, lambda_r=0.1, b
     model = RSSCNN(base_model_name=model_name, lambda_r=lambda_r).to(device)
     model.device = device
     # AlexNet placesNet
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     # VGG
-    # optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=factor, patience=patience)
 
     # 更新历史记录以包含 F1 和 AUC

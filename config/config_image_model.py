@@ -6,11 +6,11 @@ class Config:
         # 数据集参数
         self.subject_id = "01gh"
         # 通用训练参数
-        self.batch_size = 4
+        self.batch_size = 8
         self.num_epochs = 150
-        self.learning_rate = 1e-3
+        self.learning_rate = 1e-5
         self.momentum = 0.9
-        self.weight_decay = 1e-4
+        self.weight_decay = 1e-3
         self.factor = 0.1
         self.patience = 10
         self.transform = transform_cnn_2
@@ -19,8 +19,8 @@ class Config:
         self.max_lr_plateaus = 5  # 最多衰减5次
 
         # 模型与路径设置
-        self.base_model_name = 'AlexNet'  # AlexNet, VGG, PlacesNet
+        self.base_model_name = 'VGG'  # AlexNet, VGG, PlacesNet
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         # RSSCNN的超参数，网格搜索得到
-        self.lambda_r = 0.5  # 可根据网格搜索结果手动修改 AlexNet: 0.5, VGG: 0.2, PlacesNet: 0.5
+        self.lambda_r = 0.8  # 可根据网格搜索结果手动修 改 AlexNet: 0.5, VGG: 0.2, PlacesNet: 0.5
