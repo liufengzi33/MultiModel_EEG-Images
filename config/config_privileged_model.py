@@ -13,7 +13,7 @@ class PrivilegedConfig:
 
         self.eeg_model_name = 'EEGNetv1'  # EEGNetv1 EEGNetv4 ShallowFBCSPNet
         self.image_model_name = 'PlacesNet'  # AlexNet PlacesNet VGG
-        self.image_model_type = 'sscnn'
+        self.image_model_type = 'rsscnn' # rsscnn sscnn
         self.in_chans = 64
         self.n_classes = 2
         self.input_window_samples = 2000
@@ -31,7 +31,7 @@ class PrivilegedConfig:
         self.batch_size = 16
         self.lr = 1e-4
         self.momentum = 0.9
-        self.weight_decay = 1e-5
+        self.weight_decay = 1e-4
         self.optimizer = 'adamw'
         self.scheduler = 'plateau'
         self.grad_clip = 1.0

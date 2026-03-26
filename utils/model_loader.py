@@ -59,12 +59,12 @@ class ModelLoader:
 
             # 根据checkpoint的结构加载权重
             if 'model_state_dict' in checkpoint:
-                model.load_state_dict(checkpoint['model_state_dict'])
+                model.load_state_dict(checkpoint['model_state_dict'], strict=False)
             elif 'state_dict' in checkpoint:
-                model.load_state_dict(checkpoint['state_dict'])
+                model.load_state_dict(checkpoint['state_dict'], strict=False)
             else:
                 # 尝试直接加载
-                model.load_state_dict(checkpoint)
+                model.load_state_dict(checkpoint, strict=False)
 
             print(f"✅ 成功加载EEG预训练模型: {model_path}")
             return model
