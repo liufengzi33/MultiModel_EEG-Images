@@ -388,7 +388,7 @@ class MultiStageTrainer:
     def train(self):
         """主训练流程"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.save_dir = f"outputs/outputs_multi_model/{self.config.base_eeg_model}+{self.config.base_image_model}_{self.config.image_model_type}/multimodal_{timestamp}"
+        self.save_dir = f"outputs/outputs_multi_model/{self.config.base_eeg_model}+{self.config.base_image_model}_{self.config.image_model_type}/{self.config.subject_id}/multimodal_{timestamp}"
         os.makedirs(self.save_dir, exist_ok=True)
 
         # 阶段1: 快速收敛head
