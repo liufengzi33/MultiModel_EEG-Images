@@ -3,13 +3,16 @@ from datetime import datetime
 
 from utils.my_transforms import transform_cnn_2
 
+
 class PrivilegedConfig:
     """特权学习网络配置类"""
 
     def __init__(self):
         # 模型参数
-        self.eeg_model_name = 'EEGNetv1'# EEGNetv1 EEGNetv4 ShallowFBCSPNet
-        self.image_model_name = 'PlacesNet' # AlexNet PlacesNet VGG
+        self.student_modality = 'eeg'  # 学生网络模态，可选项: 'eeg' 或 'image'
+
+        self.eeg_model_name = 'EEGNetv1'  # EEGNetv1 EEGNetv4 ShallowFBCSPNet
+        self.image_model_name = 'PlacesNet'  # AlexNet PlacesNet VGG
         self.image_model_type = 'sscnn'
         self.in_chans = 64
         self.n_classes = 2
@@ -18,10 +21,10 @@ class PrivilegedConfig:
         self.common_dim = 512
         self.private_dim = 256
         self.dropout_rate = 0.5
-        self.alpha = 0.5 # 公共损失权重
+        self.alpha = 0.5  # 公共损失权重
         self.beta = 0.5  # 私有损失权重
         self.gamma = 0.3  # 蒸馏损失权重
-        self.temperature = 0.2 # 蒸馏温度
+        self.temperature = 5  # 蒸馏温度
 
         # 训练参数
         self.epochs = 50
@@ -61,6 +64,7 @@ class PrivilegedConfig:
         """将配置转换为字典"""
         return {
             # 模型参数
+            'student_modality': self.student_modality,
             'eeg_model_name': self.eeg_model_name,
             'image_model_name': self.image_model_name,
             'image_model_type': self.image_model_type,
@@ -93,7 +97,6 @@ class PrivilegedConfig:
             'train_ratio': self.train_ratio,
             'transform': self.transform,
 
-
             # 输出设置
             'output_dir': self.output_dir,
             'log_interval': self.log_interval,
@@ -109,11 +112,13 @@ class PrivilegedConfig:
 
     def get_output_dir(self):
         """动态生成输出目录路径"""
-        model_subdir = f"{self.eeg_model_name}_{self.image_model_name}_{self.image_model_type}"
+        # 在目录中加上学生模态和被试ID，清晰区分实验
+        model_subdir = f"{self.eeg_model_name}_{self.image_model_name}_{self.image_model_type}_student_{self.student_modality}"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = os.path.join(self.output_dir, model_subdir, timestamp)
+        output_dir = os.path.join(self.output_dir, model_subdir, self.subject_id, timestamp)
         os.makedirs(output_dir, exist_ok=True)
         return output_dir
+
 
 # 预定义配置
 def get_default_config():
