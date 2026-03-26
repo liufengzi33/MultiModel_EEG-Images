@@ -114,11 +114,15 @@ class PrivilegedTrainer:
         return train_loader, val_loader
 
     def _update_temperature(self, epoch):
-        """核心要求2：温度退火策略 (Temperature Annealing)"""
+        """改进的温度退火策略：指数衰减 (Exponential Decay)"""
         start_temp = self.config.temperature
         end_temp = 1.0  # 最终温度收敛到 1.0
-        # 线性退火
-        current_temp = end_temp + (start_temp - end_temp) * (1.0 - epoch / self.config.epochs)
+        decay_rate = 0.97  # 衰减率，可根据需要调整。0.95 意味着每轮变为上一轮的 95%
+
+        # 指数计算当前温度
+        current_temp = start_temp * (decay_rate ** epoch)
+
+        # 保证温度不会低于 end_temp
         self.model.temperature = max(current_temp, end_temp)
         return self.model.temperature
 

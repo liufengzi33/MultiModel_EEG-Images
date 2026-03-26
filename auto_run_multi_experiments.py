@@ -86,7 +86,7 @@ def main():
 
     # 5. 保存并输出最终统计表格
     df = pd.DataFrame(results_list)
-    os.makedirs('outputs', exist_ok=True)
+    os.makedirs('outputs/multi', exist_ok=True)
     # 按被试ID命名CSV
     csv_path = f'outputs/{subject_id}_18_combinations_summary.csv'
     df.to_csv(csv_path, index=False, encoding='utf-8-sig')

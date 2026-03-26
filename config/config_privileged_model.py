@@ -27,7 +27,7 @@ class PrivilegedConfig:
         self.temperature = 5  # 蒸馏温度
 
         # 训练参数
-        self.epochs = 50
+        self.epochs = 300
         self.batch_size = 16
         self.lr = 1e-4
         self.momentum = 0.9
