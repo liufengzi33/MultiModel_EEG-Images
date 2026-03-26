@@ -24,12 +24,12 @@ class ModelLoader:
         print(f"  EEG路径: {self.eeg_model_path}")
         print(f"  图像路径: {self.image_model_path}")
 
-    def load_eeg_model(self, model_name="EEGNet", in_chans=64, n_classes=2, input_window_samples=2000):
+    def load_eeg_model(self, model_name="EEGNetv1", in_chans=64, n_classes=2, input_window_samples=2000,subject_id="01gh"):
         """
         加载EEG预训练模型
         """
         # 构建模型路径
-        model_path = os.path.join(self.eeg_model_path, model_name, "best_model.pth")
+        model_path = os.path.join(self.eeg_model_path, model_name, subject_id, "best_model.pth")
 
         print(f"🔍 加载EEG模型:")
         print(f"  查找路径: {model_path}")

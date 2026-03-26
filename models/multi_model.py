@@ -11,6 +11,7 @@ class MultiModalFusionNetwork(nn.Module):
                  eeg_model_name="EEGNetv1",
                  image_model_name="PlacesNet",
                  image_model_type="rsscnn",
+                 subject_id="01gh",  # <--- 新增：接收被试ID
                  in_chans=64,
                  n_classes=2,
                  input_window_samples=2000,
@@ -48,7 +49,8 @@ class MultiModalFusionNetwork(nn.Module):
                 model_name=eeg_model_name,
                 in_chans=in_chans,
                 n_classes=n_classes,
-                input_window_samples=input_window_samples
+                input_window_samples=input_window_samples,
+                subject_id=subject_id  # <--- 新增：将被试ID传递给loader
             )
 
         if use_pretrained_image:
