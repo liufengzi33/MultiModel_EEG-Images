@@ -410,8 +410,9 @@ class MultiStageTrainer:
         )
 
         # 阶段3: 微调backbone
-        # 非VGG解冻前四层即可，VGG解冻8层就能收敛
-        self.unfreeze_backbone_last_layers(eeg_layers=4, img_layers=4)
+        # 动态判断：VGG解冻8层，其他解冻4层
+        dynamic_img_layers = 8 if self.config.base_image_model == 'VGG' else 4
+        self.unfreeze_backbone_last_layers(eeg_layers=4, img_layers=dynamic_img_layers)
         self.unfreeze_heads()
         self.train_stage(
             stage_name="stage3_finetune_backbone",
