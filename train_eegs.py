@@ -431,7 +431,7 @@ def main():
         weight_decay=cfg.weight_decay,
         patience=cfg.patience,
         factor=cfg.factor,
-        max_plateaus=getattr(cfg, 'max_plateaus', 4),
+        max_plateaus=cfg.max_lr_plateaus,
         base_model_name=cfg.base_model_name,
         subject_id=cfg.subject_id,  # 将配置的被试ID传给训练器以便创建独立文件夹
         output_base_dir="outputs/outputs_eeg"

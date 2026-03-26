@@ -133,9 +133,11 @@ class SSBCINet(nn.Module):
         # 分类器，单独训练eeg的时候用，后续多模态训练的时候去掉
         self.classifier = nn.Sequential(
             nn.Linear(512, 256),
+            nn.BatchNorm1d(256),  # 添加BatchNorm
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(256, 128),
+            nn.BatchNorm1d(128),  # 添加BatchNorm
             nn.ReLU(),
             nn.Dropout(0.2),
             # 二分类输出一个值
