@@ -36,9 +36,9 @@ class ModelLoader:
         print(f"  文件存在: {os.path.exists(model_path)}")
 
         # 检查目录内容
-        model_dir = os.path.join(self.eeg_model_path, model_name)
+        model_dir = os.path.join(self.eeg_model_path, model_name, subject_id)
         if os.path.exists(model_dir):
-            print(f"  EEG目录内容: {os.listdir(model_dir)}")
+            print(f"  {model_dir}的目录内容: {os.listdir(model_dir)}")
 
         if not os.path.exists(model_path):
             print(f"⚠️ EEG预训练模型不存在: {model_path}")
@@ -154,3 +154,8 @@ class ModelLoader:
                         available["image_models"][model_type].append(base_model)
 
         return available
+
+
+if __name__ == '__main__':
+    model_loader = ModelLoader("outputs")
+    model_loader.load_eeg_model(model_name='EEGNetv4')

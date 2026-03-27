@@ -88,7 +88,7 @@ def main():
     df = pd.DataFrame(results_list)
     os.makedirs('outputs/multi', exist_ok=True)
     # 按被试ID命名CSV
-    csv_path = f'outputs/{subject_id}_18_combinations_summary.csv'
+    csv_path = f'outputs/multi/{subject_id}_18_combinations_summary.csv'
     df.to_csv(csv_path, index=False, encoding='utf-8-sig')
 
     print(f"\n🎉 被试 {subject_id} 的全部 {len(combinations)} 组实验运行完毕！")

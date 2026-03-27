@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import WeightedRandomSampler, DataLoader
+
 import config.config_eeg_model
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -11,7 +13,7 @@ from sklearn.metrics import f1_score, roc_auc_score  # 新增指标
 
 from MyPP2Dataset import MyPP2Dataset, create_dataloaders
 from models.eeg_models import EEGFeatureExtractor, EEGFusionNetwork, SSBCINet
-from utils.early_stop import SchedulerEarlyStopper
+from utils.early_stop import SchedulerEarlyStopper,StrictLossEarlyStopper
 from utils.my_transforms import transform_cnn_2
 
 
@@ -24,7 +26,8 @@ class EEGTrainer:
                  max_plateaus=4,
                  base_model_name="EEGNet",
                  subject_id="01gh",  # 新增 subject_id 参数
-                 output_base_dir="outputs/outputs_eeg"):
+                 output_base_dir="outputs/outputs_eeg",
+                 pos_weight = None):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -49,13 +52,20 @@ class EEGTrainer:
         print(f"  - Checkpoints: {self.checkpoint_output_dir}")
 
         # 损失函数和优化器
-        self.criterion = nn.BCEWithLogitsLoss()
+        if pos_weight is not None:
+            self.criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight]).to(self.device))
+            print(f"Using BCE loss with pos_weight: {pos_weight:.4f}")
+        else:
+            self.criterion = nn.BCEWithLogitsLoss()
         self.optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', patience=patience,
                                                               factor=factor, verbose=True)
 
         # 使用SchedulerEarlyStopper
         self.early_stopper = SchedulerEarlyStopper(max_plateaus=max_plateaus)
+
+        # # 换成新的 StrictLossEarlyStopper，耐心值设为 20 轮
+        # self.early_stopper = StrictLossEarlyStopper(patience=100)
 
         # 训练记录 (新增了 F1 和 AUC 的列表)
         self.train_losses, self.val_losses = [], []
@@ -81,6 +91,11 @@ class EEGTrainer:
             left_eeg = left_eeg.to(self.device)
             right_eeg = right_eeg.to(self.device)
             labels = labels.float().to(self.device)
+
+            # 【关键修改】：动态注入高斯噪声 (仅在训练时)
+            # 乘以 0.05 控制噪声强度（你可以根据波形幅值微调这个 0.05）
+            # left_eeg = left_eeg + torch.randn_like(left_eeg) * 0.05
+            # right_eeg = right_eeg + torch.randn_like(right_eeg) * 0.05
 
             # 前向传播
             self.optimizer.zero_grad()
@@ -169,7 +184,10 @@ class EEGTrainer:
         print(f"Validation samples: {len(self.val_loader.dataset)}")
         print(f"Output base directory: {self.output_base_dir}")
 
-        best_val_acc = 0.0
+        # best_val_acc = 0.0
+        best_val_f1 = 0.0  # 修改点 1：改用 F1 作为基准
+        best_val_acc_at_best_f1 = 0.0
+        best_epoch = 0.0
 
         for epoch in range(epochs):
             print(f'\nEpoch {epoch + 1}/{epochs}')
@@ -204,8 +222,11 @@ class EEGTrainer:
             print(f'Plateau count: {self.early_stopper.plateau_count}/{self.early_stopper.max_plateaus}')
 
             # 保存最佳模型
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
+            if val_f1 > best_val_f1:
+                best_val_f1 = val_f1
+                best_val_acc_at_best_f1 = val_acc
+                best_epoch = epoch + 1
+
                 model_path = os.path.join(self.model_output_dir, f'best_model.pth')
                 torch.save({
                     'epoch': epoch,
@@ -213,10 +234,8 @@ class EEGTrainer:
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'scheduler_state_dict': self.scheduler.state_dict(),
                     'val_acc': val_acc,
-                    'val_loss': val_loss,
-                    'val_f1': val_f1,
+                    'val_f1': val_f1,  # 确保保存了 F1
                     'val_auc': val_auc,
-                    'plateau_count': self.early_stopper.plateau_count,
                     'timestamp': self.timestamp,
                     'base_model_name': self.base_model_name,
                     'config': {
@@ -225,7 +244,7 @@ class EEGTrainer:
                         'batch_size': self.train_loader.batch_size
                     }
                 }, model_path)
-                print(f'Best model saved with validation accuracy: {val_acc:.2f}% at {model_path}')
+                print(f'🔥 Best model saved! New Best F1: {val_f1:.4f} (Acc: {val_acc:.2f}%)')
 
             # 每10个epoch保存一次检查点
             if (epoch + 1) % 10 == 0:
@@ -253,8 +272,7 @@ class EEGTrainer:
 
             # 早停
             if should_stop:
-                print(
-                    f'Early stopping at epoch {epoch + 1} due to {self.early_stopper.max_plateaus} learning rate plateaus')
+                print(f'\n[Early Stopping] 验证集 Loss 连续 {self.early_stopper.plateau_count} 轮未下降，提前终止训练！')
                 break
 
         # 训练结束后保存最终模型
@@ -283,7 +301,7 @@ class EEGTrainer:
         # 绘制训练曲线
         self.plot_training_curves()
 
-        return best_val_acc
+        return best_val_f1,best_val_acc_at_best_f1,best_epoch
 
     def plot_training_curves(self):
         """完全复刻图像模型的seaborn风格三图绘制方式"""
@@ -405,10 +423,48 @@ def main():
     # 检查数据分布
     train_labels = [label for _, _, _, _, label in train_loader.dataset]
     test_labels = [label for _, _, _, _, label in val_loader.dataset]
+
+    train_counts = torch.bincount(torch.tensor(train_labels)).tolist()
     print("==========================检查数据集分布==========================")
     print(f"训练集分布: {torch.bincount(torch.tensor(train_labels)).tolist()}")
     print(f"测试集分布: {torch.bincount(torch.tensor(test_labels)).tolist()}")
     print(f"训练集: {len(train_loader.dataset)}, 测试集: {len(val_loader.dataset)}")
+
+    # ========================== 新增：WeightedRandomSampler 逻辑 ==========================
+    # 1. 计算类别权重（样本数量的倒数）
+    # 假设 train_counts[0] 是类别0的数量，train_counts[1] 是类别1的数量
+    class_weights = 1.0 / torch.tensor(train_counts, dtype=torch.float)
+
+    # 2. 为训练集中的每一个样本分配对应的权重
+    sample_weights = [class_weights[int(label)] for label in train_labels]
+
+    # 3. 创建 Sampler（replacement=True 表示有放回抽样）
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True
+    )
+
+    # 4. 重新构建带 Sampler 的 train_loader
+    # 注意：使用了 sampler 之后，必须去掉 shuffle=True，它们是互斥的
+    train_loader = DataLoader(
+        dataset=train_loader.dataset,
+        batch_size=cfg.batch_size,
+        sampler=sampler,
+        drop_last=False
+    )
+    print("✅ 已成功应用 WeightedRandomSampler，强制平衡 Batch 类别分布！")
+    # ====================================================================================
+
+    # 【关键修改】由于使用了 Sampler，Batch 内已经平衡了，
+    # 此时不再需要让 BCEWithLogitsLoss 使用 pos_weight 进行二次惩罚，否则会导致反向不平衡。
+    calculated_pos_weight = None
+    print(f"Sampler applied, disabling BCE pos_weight (set to None).")
+
+    # 【关键修改】计算 pos_weight: 负样本数量 / 正样本数量
+    # 比如 79 个 0, 161 个 1，那么 pos_weight 就是 79/161
+    # calculated_pos_weight = train_counts[0] / train_counts[1]
+    # print(f"Calculated pos_weight for Imbalance: {calculated_pos_weight:.4f}")
 
     # 创建模型
     model = SSBCINet(
@@ -434,21 +490,20 @@ def main():
         max_plateaus=cfg.max_lr_plateaus,
         base_model_name=cfg.base_model_name,
         subject_id=cfg.subject_id,  # 将配置的被试ID传给训练器以便创建独立文件夹
-        output_base_dir="outputs/outputs_eeg"
+        output_base_dir="outputs/outputs_eeg",
+        pos_weight = calculated_pos_weight
     )
-    best_acc = trainer.train(epochs=cfg.num_epochs)
+    best_f1,best_acc_at_best_f1,best_epoch = trainer.train(epochs=cfg.num_epochs)
 
-    print(f"\nTraining completed! Best validation accuracy: {best_acc:.2f}%")
+    print(f"\nTraining completed! Best validation F1: {best_f1:.4f} ,  Best acc: {best_acc_at_best_f1:.4f} , Best epoch:{best_epoch}")
 
     # 从正确的路径加载最佳模型
     best_model_path = os.path.join(trainer.model_output_dir, 'best_model.pth')
     if os.path.exists(best_model_path):
         checkpoint = torch.load(best_model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
-        print(f"Best model loaded from {best_model_path} for inference.")
-        print(f"Best validation accuracy: {checkpoint['val_acc']:.2f}%")
-        print(f"Base model: {checkpoint.get('base_model_name', 'Unknown')}")
-        print(f"Training timestamp: {checkpoint.get('timestamp', 'Unknown')}")
+        print(f"Best model loaded from {best_model_path}")
+        print(f"Loaded Model Stats -> F1: {checkpoint['val_f1']:.4f}, Acc: {checkpoint['val_acc']:.2f}%")
     else:
         print(f"No best model found at {best_model_path}!")
 

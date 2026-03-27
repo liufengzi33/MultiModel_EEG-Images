@@ -11,15 +11,15 @@ class Config:
         self.num_epochs = 300
         self.learning_rate = 5e-4
         self.momentum = 0.9
-        self.weight_decay = 1e-3
+        self.weight_decay = 5e-4
         self.factor = 0.5
-        self.patience = 20
+        self.patience = 8
         self.transform = transform_cnn_2
 
         # Early Stop 设置
         self.max_lr_plateaus = 5  # 最多衰减5次
 
         # 模型与路径设置
-        self.base_model_name = 'ShallowFBCSPNet'  # EEGNetv1, EEGNetv4, ShallowFBCSPNet
+        self.base_model_name = 'EEGNetv4'  # EEGNetv1, EEGNetv4, ShallowFBCSPNet
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         # self.device = 'cpu'
