@@ -219,16 +219,19 @@ class MultiStageTrainer:
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 no_improve_count = 0
-                # 保存最佳模型
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': self.model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'val_loss': val_loss,
-                    'val_acc': val_acc,
-                    'stage': stage_name
-                }, os.path.join(self.save_dir, f'best_{stage_name}.pth'))
-                print(f"  ✅ 保存最佳模型 (val_loss: {val_loss:.4f})")
+                if self.config.ablation_mode == "none":
+                    # 保存最佳模型
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': self.model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'val_loss': val_loss,
+                        'val_acc': val_acc,
+                        'stage': stage_name
+                    }, os.path.join(self.save_dir, f'best_{stage_name}.pth'))
+                    print(f"  ✅ 保存最佳模型 (val_loss: {val_loss:.4f})")
+                else:
+                    print("✅ 发现更好，但消融实验不保存模型")
             else:
                 no_improve_count += 1
 
