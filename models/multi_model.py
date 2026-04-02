@@ -82,15 +82,6 @@ class MultiModalFusionNetwork(nn.Module):
             image_model_type=image_model_type
         )
 
-        # 公共通道编码器 (共享参数)
-        self.common_encoder = nn.Sequential(
-            nn.Linear(self.eeg_feature_net.out_dim, common_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(common_dim, common_dim),
-            nn.ReLU()
-        )
-
         # 如果是 baseline_concat，直接拼接底层特征，不需要公共/私有编码器
         if self.ablation_mode == 'baseline_concat':
             fusion_dim = self.eeg_feature_net.out_dim + self.image_feature_net.out_dim
