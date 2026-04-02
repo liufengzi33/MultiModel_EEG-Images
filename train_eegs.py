@@ -246,29 +246,29 @@ class EEGTrainer:
                 }, model_path)
                 print(f'🔥 Best model saved! New Best F1: {val_f1:.4f} (Acc: {val_acc:.2f}%)')
 
-            # 每10个epoch保存一次检查点
-            if (epoch + 1) % 10 == 0:
-                checkpoint_path = os.path.join(self.checkpoint_output_dir, f'checkpoint_epoch_{epoch + 1}.pth')
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': self.model.state_dict(),
-                    'optimizer_state_dict': self.optimizer.state_dict(),
-                    'scheduler_state_dict': self.scheduler.state_dict(),
-                    'timestamp': self.timestamp,
-                    'base_model_name': self.base_model_name,
-                    'training_history': {
-                        'train_losses': self.train_losses[:epoch + 1],
-                        'val_losses': self.val_losses[:epoch + 1],
-                        'train_accuracies': self.train_accuracies[:epoch + 1],
-                        'val_accuracies': self.val_accuracies[:epoch + 1],
-                        'train_f1s': self.train_f1s[:epoch + 1],
-                        'val_f1s': self.val_f1s[:epoch + 1],
-                        'train_aucs': self.train_aucs[:epoch + 1],
-                        'val_aucs': self.val_aucs[:epoch + 1],
-                        'learning_rates': self.learning_rates[:epoch + 1]
-                    }
-                }, checkpoint_path)
-                print(f'Checkpoint saved at {checkpoint_path}')
+            # # 每10个epoch保存一次检查点
+            # if (epoch + 1) % 10 == 0:
+            #     checkpoint_path = os.path.join(self.checkpoint_output_dir, f'checkpoint_epoch_{epoch + 1}.pth')
+            #     torch.save({
+            #         'epoch': epoch,
+            #         'model_state_dict': self.model.state_dict(),
+            #         'optimizer_state_dict': self.optimizer.state_dict(),
+            #         'scheduler_state_dict': self.scheduler.state_dict(),
+            #         'timestamp': self.timestamp,
+            #         'base_model_name': self.base_model_name,
+            #         'training_history': {
+            #             'train_losses': self.train_losses[:epoch + 1],
+            #             'val_losses': self.val_losses[:epoch + 1],
+            #             'train_accuracies': self.train_accuracies[:epoch + 1],
+            #             'val_accuracies': self.val_accuracies[:epoch + 1],
+            #             'train_f1s': self.train_f1s[:epoch + 1],
+            #             'val_f1s': self.val_f1s[:epoch + 1],
+            #             'train_aucs': self.train_aucs[:epoch + 1],
+            #             'val_aucs': self.val_aucs[:epoch + 1],
+            #             'learning_rates': self.learning_rates[:epoch + 1]
+            #         }
+            #     }, checkpoint_path)
+            #     print(f'Checkpoint saved at {checkpoint_path}')
 
             # 早停
             if should_stop:
