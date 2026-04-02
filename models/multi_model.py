@@ -22,7 +22,8 @@ class MultiModalFusionNetwork(nn.Module):
                  private_dim=256,
                  dropout_rate=0.5,
                  alpha=0.5,  # 公共损失权重
-                 beta=0.5):  # 私有损失权重
+                 beta=0.5, # 私有损失权重
+                 ablation_mode="none"):
         """
         改进的多模态融合网络 - 基于脑机耦合学习思想
 
@@ -31,11 +32,17 @@ class MultiModalFusionNetwork(nn.Module):
             private_dim: 私有特征维度
             alpha: 公共通道相似性损失权重
             beta: 私有通道差异性损失权重
+            ablation_mode 消融实验模式:
+            - "none": 完整模型 (默认)
+            - "baseline_concat": 仅拼接特征 (Baseline)
+            - "no_cmd": 去掉公共通道相似性损失 (CMD)
+            - "no_ortho": 去掉私有通道差异性损失 (Orthogonality)
         """
         super(MultiModalFusionNetwork, self).__init__()
 
         self.alpha = alpha
         self.beta = beta
+        self.ablation_mode = ablation_mode  # 记录消融模式
 
         # 初始化模型加载器
         self.model_loader = ModelLoader(base_path)
@@ -84,25 +91,35 @@ class MultiModalFusionNetwork(nn.Module):
             nn.ReLU()
         )
 
-        # 私有通道编码器 (每个模态独立)
-        self.eeg_private_encoder = nn.Sequential(
-            nn.Linear(self.eeg_feature_net.out_dim, private_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(private_dim, private_dim),
-            nn.ReLU()
-        )
+        # 如果是 baseline_concat，直接拼接底层特征，不需要公共/私有编码器
+        if self.ablation_mode == 'baseline_concat':
+            fusion_dim = self.eeg_feature_net.out_dim + self.image_feature_net.out_dim
+            print("🚀 [Ablation] 启动 Baseline 模式: 直接拼接特征，跳过解耦网络")
+        else:
+            fusion_dim = common_dim * 2 + private_dim * 2
+            # 仅在非 baseline 时初始化解耦编码器
+            self.common_encoder = nn.Sequential(
+                nn.Linear(self.eeg_feature_net.out_dim, common_dim),
+                nn.ReLU(), nn.Dropout(dropout_rate),
+                nn.Linear(common_dim, common_dim), nn.ReLU()
+            )
+            self.eeg_private_encoder = nn.Sequential(
+                nn.Linear(self.eeg_feature_net.out_dim, private_dim),
+                nn.ReLU(), nn.Dropout(dropout_rate),
+                nn.Linear(private_dim, private_dim), nn.ReLU()
+            )
+            self.image_private_encoder = nn.Sequential(
+                nn.Linear(self.image_feature_net.out_dim, private_dim),
+                nn.ReLU(), nn.Dropout(dropout_rate),
+                nn.Linear(private_dim, private_dim), nn.ReLU()
+            )
 
-        self.image_private_encoder = nn.Sequential(
-            nn.Linear(self.image_feature_net.out_dim, private_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(private_dim, private_dim),
-            nn.ReLU()
-        )
+            if self.ablation_mode == 'no_cmd':
+                print("🚀 [Ablation] 启动 No-CMD 模式: 去除公共特征对齐损失")
+            elif self.ablation_mode == 'no_ortho':
+                print("🚀 [Ablation] 启动 No-Ortho 模式: 去除私有特征正交损失")
 
         # 分类器
-        fusion_dim = common_dim * 2 + private_dim * 2  # 公共特征 + EEG私有特征 + 图像私有特征
         self.classifier = nn.Sequential(
             nn.Linear(fusion_dim, 512),
             nn.ReLU(),
@@ -181,21 +198,26 @@ class MultiModalFusionNetwork(nn.Module):
         eeg_base_features = self.eeg_feature_net(eeg1, eeg2)
         image_base_features = self.image_feature_net(img1, img2)
 
-        # 公共通道特征
-        eeg_common = self.common_encoder(eeg_base_features)
-        image_common = self.common_encoder(image_base_features)
+        if self.ablation_mode == 'baseline_concat':
+            # 消融实验1：直接拼接
+            fused_features = torch.cat([eeg_base_features, image_base_features], dim=1)
+            eeg_common = image_common = eeg_private = image_private = None
+        else:
+            # 公共通道特征
+            eeg_common = self.common_encoder(eeg_base_features)
+            image_common = self.common_encoder(image_base_features)
 
-        # 私有通道特征
-        eeg_private = self.eeg_private_encoder(eeg_base_features)
-        image_private = self.image_private_encoder(image_base_features)
+            # 私有通道特征
+            eeg_private = self.eeg_private_encoder(eeg_base_features)
+            image_private = self.image_private_encoder(image_base_features)
 
-        # 特征融合: EEG公共特征 + 图像公共特征 + EEG私有特征 + 图像私有特征
-        fused_features = torch.cat([
-            eeg_common,  # EEG公共特征
-            image_common,  # 图像公共特征
-            eeg_private,  # EEG私有特征
-            image_private  # 图像私有特征
-        ], dim=1)
+            # 特征融合: EEG公共特征 + 图像公共特征 + EEG私有特征 + 图像私有特征
+            fused_features = torch.cat([
+                eeg_common,  # EEG公共特征
+                image_common,  # 图像公共特征
+                eeg_private,  # EEG私有特征
+                image_private  # 图像私有特征
+            ], dim=1)
 
         # 分类
         logits = self.classifier(fused_features)
@@ -218,14 +240,22 @@ class MultiModalFusionNetwork(nn.Module):
         else:  # 多分类
             task_loss = F.cross_entropy(logits, targets)
 
-        # 2. 公共通道相似性损失 (使用CMD距离)
-        common_sim_loss = self.cmd_loss(eeg_common, image_common, K=3)
+        device = logits.device
+        common_sim_loss = torch.tensor(0.0, device=device)
+        private_diff_loss = torch.tensor(0.0, device=device)
 
-        # 3. 私有通道差异性损失
-        private_diff_loss = self.orthogonality_loss(eeg_common, eeg_private, image_common, image_private)
+        if self.ablation_mode == 'baseline_concat':
+            total_loss = task_loss
+        else:
+            # 2. 公共通道相似性损失 (消融2：如果 no_cmd 则保持为0)
+            if self.ablation_mode != 'no_cmd':
+                common_sim_loss = self.cmd_loss(eeg_common, image_common, K=3)
 
-        # 总损失
-        total_loss = task_loss + self.alpha * common_sim_loss + self.beta * private_diff_loss
+            # 3. 私有通道差异性损失 (消融3：如果 no_ortho 则保持为0)
+            if self.ablation_mode != 'no_ortho':
+                private_diff_loss = self.orthogonality_loss(eeg_common, eeg_private, image_common, image_private)
+
+            total_loss = task_loss + self.alpha * common_sim_loss + self.beta * private_diff_loss
 
         return {
             'total_loss': total_loss,

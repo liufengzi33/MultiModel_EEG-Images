@@ -65,6 +65,7 @@ class MultiStageTrainer:
             dropout_rate=0.5,
             alpha=self.config.alpha,
             beta=self.config.beta,
+            ablation_mode=self.config.ablation_mode,
         ).to(self.device)
 
         # 参数统计
@@ -111,13 +112,14 @@ class MultiStageTrainer:
         print("🔓 额外解冻融合层")
 
     def unfreeze_heads(self):
-        """解冻head网络"""
-        for p in self.model.common_encoder.parameters():
-            p.requires_grad = True
-        for p in self.model.eeg_private_encoder.parameters():
-            p.requires_grad = True
-        for p in self.model.image_private_encoder.parameters():
-            p.requires_grad = True
+        """解冻head网络 (做安全检查，以兼容 baseline 模式)"""
+        if hasattr(self.model, 'common_encoder'):
+            for p in self.model.common_encoder.parameters(): p.requires_grad = True
+        if hasattr(self.model, 'eeg_private_encoder'):
+            for p in self.model.eeg_private_encoder.parameters(): p.requires_grad = True
+        if hasattr(self.model, 'image_private_encoder'):
+            for p in self.model.image_private_encoder.parameters(): p.requires_grad = True
+
         for p in self.model.classifier.parameters():
             p.requires_grad = True
         print("🔓 解冻head网络")
@@ -218,15 +220,16 @@ class MultiStageTrainer:
                 best_val_loss = val_loss
                 no_improve_count = 0
                 # 保存最佳模型
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': self.model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'val_loss': val_loss,
-                    'val_acc': val_acc,
-                    'stage': stage_name
-                }, os.path.join(self.save_dir, f'best_{stage_name}.pth'))
-                print(f"  ✅ 保存最佳模型 (val_loss: {val_loss:.4f})")
+                # torch.save({
+                #     'epoch': epoch,
+                #     'model_state_dict': self.model.state_dict(),
+                #     'optimizer_state_dict': optimizer.state_dict(),
+                #     'val_loss': val_loss,
+                #     'val_acc': val_acc,
+                #     'stage': stage_name
+                # }, os.path.join(self.save_dir, f'best_{stage_name}.pth'))
+                # print(f"  ✅ 保存最佳模型 (val_loss: {val_loss:.4f})")
+                print(f"  ✅ 发现最佳指标 (val_loss: {val_loss:.4f})，已跳过权重文件保存")
             else:
                 no_improve_count += 1
 

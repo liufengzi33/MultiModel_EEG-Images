@@ -12,6 +12,9 @@ class Config:
         self.beta = 0.5
         self.transform = transform_cnn_2
 
+        # 消融实验模式
+        self.ablation_mode = "none"
+
         # Early Stop 设置
         self.max_lr_plateaus = 8  # 最多衰减5次
 
