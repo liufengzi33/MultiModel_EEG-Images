@@ -411,18 +411,18 @@ class MultiStageTrainer:
         self.train_stage(
             stage_name="stage2_align_features",
             lr_head=5e-4, lr_backbone=0,
-            max_epochs=80, patience=10, min_epochs=30
+            max_epochs=40, patience=5, min_epochs=10
         )
 
         # 阶段3: 微调backbone
         # 动态判断：VGG解冻8层，其他解冻4层
-        dynamic_img_layers = 8 if self.config.base_image_model == 'VGG' else 4
+        dynamic_img_layers = 6 if self.config.base_image_model == 'VGG' else 4
         self.unfreeze_backbone_last_layers(eeg_layers=4, img_layers=dynamic_img_layers)
         self.unfreeze_heads()
         self.train_stage(
             stage_name="stage3_finetune_backbone",
             lr_head=2e-4, lr_backbone=1e-5,
-            max_epochs=60, patience=10, min_epochs=30
+            max_epochs=40, patience=10, min_epochs=20
         )
 
         self.save_training_history()

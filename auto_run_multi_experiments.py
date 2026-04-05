@@ -12,8 +12,9 @@ def main():
     # 🎯 自动化消融模式列表
     # 脚本将依次遍历这些模式，全部跑完！
     # =====================================================================
-    ablation_modes = ['baseline_concat', 'no_cmd', 'no_ortho', 'none']
-
+    # ablation_modes = ['none', 'baseline_concat', 'no_cmd', 'no_ortho', ]
+    # ablation_modes = ['baseline_concat', 'no_cmd', 'no_ortho', ]
+    ablation_modes = ['baseline_concat']
     subjects = ["01gh", "02szy", "03ysq", "04whx", "05ly", "06wrl", "07lxy"]
 
     # 模型测试范围

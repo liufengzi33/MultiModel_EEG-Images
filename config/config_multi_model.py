@@ -13,14 +13,14 @@ class Config:
         self.transform = transform_cnn_2
 
         # 消融实验模式
-        self.ablation_mode = "none"
+        self.ablation_mode = "baseline_concat" #'none', 'baseline_concat', 'no_cmd', 'no_ortho'
 
         # Early Stop 设置
         self.max_lr_plateaus = 8  # 最多衰减5次
 
         # 模型与路径设置
-        self.base_eeg_model = 'EEGNetv1' # EEGNetv1 EEGNetv4 ShallowFBCSPNet
+        self.base_eeg_model = 'EEGNetv4' # EEGNetv1 EEGNetv4 ShallowFBCSPNet
         self.base_image_model = 'PlacesNet' # AlexNet PlacesNet VGG
-        self.image_model_type = "sscnn" # rsscnn sscnn
+        self.image_model_type = "rsscnn" # rsscnn sscnn
         self.use_pretrained = True # 使用预训练的eeg&image模型
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
