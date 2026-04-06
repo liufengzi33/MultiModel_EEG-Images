@@ -60,8 +60,6 @@ class MultiStageTrainer:
             in_chans=64,
             n_classes=2,
             input_window_samples=2000,
-            common_dim=512,
-            private_dim=256,
             dropout_rate=0.5,
             alpha=self.config.alpha,
             beta=self.config.beta,

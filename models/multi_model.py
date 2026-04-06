@@ -18,8 +18,7 @@ class MultiModalFusionNetwork(nn.Module):
                  use_pretrained_eeg=True,
                  use_pretrained_image=True,
                  base_path="outputs",
-                 common_dim=512,
-                 private_dim=256,
+                 feature_dim=64,  # common_dim=512 private_dim=256,  将这两个统一
                  dropout_rate=0.5,
                  alpha=0.5,  # 公共损失权重
                  beta=0.5, # 私有损失权重
@@ -87,22 +86,29 @@ class MultiModalFusionNetwork(nn.Module):
             fusion_dim = self.eeg_feature_net.out_dim + self.image_feature_net.out_dim
             print("🚀 [Ablation] 启动 Baseline 模式: 直接拼接特征，跳过解耦网络")
         else:
-            fusion_dim = common_dim * 2 + private_dim * 2
+            fusion_dim = feature_dim * 4  # 4个分支，每个都是 feature_dim
             # 仅在非 baseline 时初始化解耦编码器
+            # <--- 修改：引入 LeakyReLU 和 LayerNorm
             self.common_encoder = nn.Sequential(
-                nn.Linear(self.eeg_feature_net.out_dim, common_dim),
-                nn.ReLU(), nn.Dropout(dropout_rate),
-                nn.Linear(common_dim, common_dim), nn.ReLU()
+                nn.Linear(self.eeg_feature_net.out_dim, feature_dim),
+                nn.LeakyReLU(0.2),
+                nn.Dropout(dropout_rate),
+                nn.Linear(feature_dim, feature_dim),
+                nn.LayerNorm(feature_dim)  # 强制统一 EEG 和 Image 的均值与方差
             )
             self.eeg_private_encoder = nn.Sequential(
-                nn.Linear(self.eeg_feature_net.out_dim, private_dim),
-                nn.ReLU(), nn.Dropout(dropout_rate),
-                nn.Linear(private_dim, private_dim), nn.ReLU()
+                nn.Linear(self.eeg_feature_net.out_dim, feature_dim),
+                nn.LeakyReLU(0.2),
+                nn.Dropout(dropout_rate),
+                nn.Linear(feature_dim, feature_dim),
+                nn.LayerNorm(feature_dim)
             )
             self.image_private_encoder = nn.Sequential(
-                nn.Linear(self.image_feature_net.out_dim, private_dim),
-                nn.ReLU(), nn.Dropout(dropout_rate),
-                nn.Linear(private_dim, private_dim), nn.ReLU()
+                nn.Linear(self.image_feature_net.out_dim, feature_dim),
+                nn.LeakyReLU(0.2),
+                nn.Dropout(dropout_rate),
+                nn.Linear(feature_dim, feature_dim),
+                nn.LayerNorm(feature_dim)
             )
 
             if self.ablation_mode == 'no_cmd':
@@ -277,32 +283,26 @@ class MultiModalFusionNetwork(nn.Module):
 
     def orthogonality_loss(self, eeg_common, eeg_private, image_common, image_private):
         """
-        简单的正交性损失 - 直接处理维度不匹配
+        修复后的正交性损失 - 严格要求维度一致，拒绝截断作弊
         """
 
-        def dimension_aware_loss(A, B):
-            """维度感知的损失计算"""
-            # 统一到最小维度
-            min_dim = min(A.size(1), B.size(1))
-            A_trim = A[:, :min_dim]
-            B_trim = B[:, :min_dim]
+        def cosine_penalty(A, B):
+            # 对张量进行 L2 归一化
+            A_norm = F.normalize(A, p=2, dim=1)
+            B_norm = F.normalize(B, p=2, dim=1)
 
-            # 归一化
-            A_norm = F.normalize(A_trim, p=2, dim=1)
-            B_norm = F.normalize(B_trim, p=2, dim=1)
-
-            # 计算批次内余弦相似度的平均值
+            # 计算批次内余弦相似度
             cosine_sim = (A_norm * B_norm).sum(dim=1)  # [batch_size]
 
-            # 我们希望余弦相似度接近0（正交）
-            return cosine_sim.abs().mean()  # 取绝对值后平均
+            # 我们希望余弦相似度接近 0（完全正交）
+            return cosine_sim.abs().mean()
 
-        loss1 = dimension_aware_loss(eeg_common, eeg_private)
-        loss2 = dimension_aware_loss(image_common, image_private)
-        loss3 = dimension_aware_loss(eeg_private, image_private)
+        # 计算三个维度的正交排斥力
+        loss1 = cosine_penalty(eeg_common, eeg_private)
+        loss2 = cosine_penalty(image_common, image_private)
+        loss3 = cosine_penalty(eeg_private, image_private)
 
         total_loss = (loss1 + loss2 + loss3) / 3.0
-
         return total_loss
 
     def _initialize_weights(self):

@@ -14,14 +14,19 @@ def main():
     # =====================================================================
     # ablation_modes = ['none', 'baseline_concat', 'no_cmd', 'no_ortho', ]
     # ablation_modes = ['baseline_concat', 'no_cmd', 'no_ortho', ]
-    ablation_modes = ['baseline_concat']
+    ablation_modes = ['no_cmd', 'no_ortho']
+
     subjects = ["01gh", "02szy", "03ysq", "04whx", "05ly", "06wrl", "07lxy"]
 
-    # 模型测试范围
-    eeg_models = ['EEGNetv1', 'EEGNetv4', 'ShallowFBCSPNet']
-    image_models = ['AlexNet', 'PlacesNet', 'VGG']
-    image_types = ['sscnn', 'rsscnn']
+    # 模型测试范围 --全跑
+    # eeg_models = ['EEGNetv1', 'EEGNetv4', 'ShallowFBCSPNet']
+    # image_models = ['AlexNet', 'PlacesNet', 'VGG']
+    # image_types = ['sscnn', 'rsscnn']
 
+    # 模型测试范围 --消融实验跑一组
+    eeg_models = ['EEGNetv1',]
+    image_models = ['PlacesNet',]
+    image_types = ['rsscnn']
     # 生成组合：EEG x Image x Type
     combinations = list(itertools.product(eeg_models, image_models, image_types))
 

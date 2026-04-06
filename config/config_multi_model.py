@@ -7,19 +7,19 @@ class Config:
         self.subject_id = "01gh"
         # 通用训练参数
         self.batch_size = 16
-        self.weight_decay = 1e-4
-        self.alpha = 0.5
-        self.beta = 0.5
+        self.weight_decay = 1e-2
+        self.alpha = 0.1
+        self.beta = 15
         self.transform = transform_cnn_2
 
         # 消融实验模式
-        self.ablation_mode = "baseline_concat" #'none', 'baseline_concat', 'no_cmd', 'no_ortho'
+        self.ablation_mode = "none" #'none', 'baseline_concat', 'no_cmd', 'no_ortho'
 
         # Early Stop 设置
         self.max_lr_plateaus = 8  # 最多衰减5次
 
         # 模型与路径设置
-        self.base_eeg_model = 'EEGNetv4' # EEGNetv1 EEGNetv4 ShallowFBCSPNet
+        self.base_eeg_model = 'EEGNetv1' # EEGNetv1 EEGNetv4 ShallowFBCSPNet
         self.base_image_model = 'PlacesNet' # AlexNet PlacesNet VGG
         self.image_model_type = "rsscnn" # rsscnn sscnn
         self.use_pretrained = True # 使用预训练的eeg&image模型
