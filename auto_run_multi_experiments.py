@@ -13,7 +13,7 @@ def main():
     # 脚本将依次遍历这些模式，全部跑完！
     # =====================================================================
     # ablation_modes = ['none', 'baseline_concat', 'no_cmd', 'no_ortho', ]
-    # ablation_modes = ['baseline_concat', 'no_cmd', 'no_ortho', ]
+    # ablation_modes = ['none', 'baseline_concat', ]
     ablation_modes = ['no_cmd', 'no_ortho']
 
     subjects = ["01gh", "02szy", "03ysq", "04whx", "05ly", "06wrl", "07lxy"]
@@ -27,6 +27,7 @@ def main():
     eeg_models = ['EEGNetv1',]
     image_models = ['PlacesNet',]
     image_types = ['rsscnn']
+
     # 生成组合：EEG x Image x Type
     combinations = list(itertools.product(eeg_models, image_models, image_types))
 
