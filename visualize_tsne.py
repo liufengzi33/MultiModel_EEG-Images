@@ -217,7 +217,7 @@ def main():
         ablation_mode="none"
     ).to(device)
 
-    # 确保此处的路径和时间戳是你刚训练出来的好结果
+    # 确保此处的路径和时间戳是刚训练出来的好结果
     weights_path = f"outputs/outputs_multi_model/{config.base_eeg_model}+{config.base_image_model}_{config.image_model_type}/{config.subject_id}/multimodal_20260406_195304/best_stage3_finetune_backbone.pth"
 
     if os.path.exists(weights_path):
