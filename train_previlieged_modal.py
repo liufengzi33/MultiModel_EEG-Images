@@ -73,8 +73,7 @@ class PrivilegedTrainer:
             use_pretrained_eeg=self.config.use_pretrained,
             use_pretrained_image=self.config.use_pretrained,
             base_path=self.config.base_path,
-            common_dim=self.config.common_dim,
-            private_dim=self.config.private_dim,
+            feature_dim=self.config.feature_dim,
             dropout_rate=self.config.dropout_rate,
             alpha=self.config.alpha,
             beta=self.config.beta,
@@ -350,6 +349,7 @@ class PrivilegedTrainer:
                 stage_best_val_loss = val_metrics['total_loss']
                 no_improve_count = 0
                 self.save_checkpoint(stage_name=stage_name)
+                print(f"  🌟总损失最低时的学生网络准确率: {val_metrics['student_acc']:.2f}%，模型已保存！")
             else:
                 no_improve_count += 1
 
@@ -400,18 +400,18 @@ class PrivilegedTrainer:
             stage_name="stage2_align_features",
             train_loader=train_loader, val_loader=val_loader,
             lr_head=5e-4, lr_backbone=0,
-            max_epochs=60, patience=10, min_epochs=20
+            max_epochs=40, patience=5, min_epochs=10
         )
 
         # 阶段3: 微调 Backbone 解开封印
-        dynamic_img_layers = 8 if self.config.image_model_name == 'VGG' else 4
+        dynamic_img_layers = 6 if self.config.image_model_name == 'VGG' else 4
         self.unfreeze_backbone_last_layers(eeg_layers=4, img_layers=dynamic_img_layers)
         self.unfreeze_heads()
         self.train_stage(
             stage_name="stage3_finetune_backbone",
             train_loader=train_loader, val_loader=val_loader,
             lr_head=2e-4, lr_backbone=1e-5,  # 极小的 backbone 学习率
-            max_epochs=60, patience=10, min_epochs=30
+            max_epochs=40, patience=10, min_epochs=20
         )
 
         print(f"\n🎉 特权学习三阶段训练全部完成!")

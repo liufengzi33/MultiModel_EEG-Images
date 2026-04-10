@@ -18,12 +18,11 @@ class PrivilegedConfig:
         self.n_classes = 2
         self.input_window_samples = 2000
         self.use_pretrained = True
-        self.common_dim = 512
-        self.private_dim = 256
+        self.feature_dim = 64
         self.dropout_rate = 0.5
-        self.alpha = 0.5  # 公共损失权重
-        self.beta = 0.5  # 私有损失权重
-        self.gamma = 0.3  # 蒸馏损失权重
+        self.alpha = 0.1  # 公共损失权重
+        self.beta = 15  # 私有损失权重
+        self.gamma = 2.0  # 蒸馏损失权重
         self.temperature = 5  # 蒸馏温度
 
         # 训练参数
@@ -72,8 +71,7 @@ class PrivilegedConfig:
             'n_classes': self.n_classes,
             'input_window_samples': self.input_window_samples,
             'use_pretrained': self.use_pretrained,
-            'common_dim': self.common_dim,
-            'private_dim': self.private_dim,
+            'feature_dim': self.feature_dim,
             'dropout_rate': self.dropout_rate,
             'alpha': self.alpha,
             'beta': self.beta,

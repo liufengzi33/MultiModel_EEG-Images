@@ -14,9 +14,12 @@ def main():
     subjects = ["01gh", "02szy", "03ysq", "04whx", "05ly", "06wrl", "07lxy"]
 
     # 2. 定义需要遍历的参数字典
+    # eeg_models = ['EEGNetv1', 'EEGNetv4', 'ShallowFBCSPNet']
+    # image_models = ['AlexNet', 'PlacesNet', 'VGG']
+    # image_types = ['sscnn', 'rsscnn']
     eeg_models = ['EEGNetv1', 'EEGNetv4', 'ShallowFBCSPNet']
-    image_models = ['AlexNet', 'PlacesNet', 'VGG']
-    image_types = ['sscnn', 'rsscnn']
+    image_models = ['VGG']
+    image_types = ['sscnn']
 
     # 生成所有 3 x 3 x 2 = 18 种组合
     combinations = list(itertools.product(eeg_models, image_models, image_types))
