@@ -213,11 +213,8 @@ def main():
             print(f"✅ 蒸馏模型权重完美加载！原汁原味地还原了模型参数。")
         except Exception as e:
             print(f"❌ 权重加载失败！报错信息: {e}")
-
-            # 如果还是失败，把真实的 Keys 打印出来让我看一眼
             print("\n🚨 让我们看看真实的字典里到底保存了什么名字：")
             print(list(clean_state_dict.keys())[:10])
-
     else:
         print(f"⚠️ 严重警告：在硬盘上根本找不到这个文件！")
     print("==========================================\n")
