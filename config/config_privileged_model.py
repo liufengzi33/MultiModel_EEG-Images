@@ -11,9 +11,9 @@ class PrivilegedConfig:
         # 模型参数
         self.student_modality = 'eeg'  # 学生网络模态，可选项: 'eeg' 或 'image'
 
-        self.eeg_model_name = 'EEGNetv1'  # EEGNetv1 EEGNetv4 ShallowFBCSPNet
-        self.image_model_name = 'PlacesNet'  # AlexNet PlacesNet VGG
-        self.image_model_type = 'rsscnn' # rsscnn sscnn
+        self.eeg_model_name = 'EEGNetv4'  # EEGNetv1 EEGNetv4 ShallowFBCSPNet
+        self.image_model_name = 'VGG'  # AlexNet PlacesNet VGG
+        self.image_model_type = 'sscnn' # rsscnn sscnns
         self.in_chans = 64
         self.n_classes = 2
         self.input_window_samples = 2000

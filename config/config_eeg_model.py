@@ -22,4 +22,4 @@ class Config:
         # 模型与路径设置
         self.base_model_name = 'EEGNetv4'  # EEGNetv1, EEGNetv4, ShallowFBCSPNet
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        # self.device = 'cpu'
+        # self.device = 'cpu']

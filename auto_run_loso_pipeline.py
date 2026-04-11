@@ -205,8 +205,8 @@ def main():
     # 🌟 将 EEG 模型改为列表
     eeg_models = ['EEGNetv1', 'EEGNetv4', 'ShallowFBCSPNet']
 
-    image_model_name = 'PlacesNet'
-    img_type = 'rsscnn'
+    image_model_name = 'VGG'
+    img_type = 'sscnn'
 
     # ---------------------------------------------------------
 
@@ -216,10 +216,10 @@ def main():
 
 
     # 步骤 1：批量跑通所有折数、所有 EEG 架构的预训练，并落盘
-    run_phase_a_eeg_pretrain(all_subjects, eeg_models)
+    # run_phase_a_eeg_pretrain(all_subjects, eeg_models)
 
     # 步骤 2：读取本地所有 EEG 权重，批量跑所有折数的双模态训练
-    # run_phase_b_multimodal_finetune(all_subjects, eeg_models, image_model_name, img_type)
+    run_phase_b_multimodal_finetune(all_subjects, eeg_models, image_model_name, img_type)
 
 
 if __name__ == "__main__":
