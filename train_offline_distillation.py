@@ -12,6 +12,7 @@ import seaborn as sns
 from datetime import datetime
 from sklearn.metrics import f1_score, roc_auc_score
 from tqdm import tqdm
+from torch.utils.data import DataLoader, ConcatDataset
 
 warnings.filterwarnings('ignore')
 
@@ -115,9 +116,56 @@ class OfflineDistillationTrainer:
         return full_model
 
     def create_dataloaders(self):
-        dataset = MyPP2Dataset(is_flipped=False, transform=self.config.transform, subject_id=self.config.subject_id)
-        train_loader, val_loader = create_dataloaders(dataset=dataset, batch_size=self.config.batch_size, shuffle=True)
-        return train_loader, val_loader
+        """支持 Intra-subject 和 Cross-subject (LOSO) 两种数据加载模式"""
+        mode = getattr(self.config, 'train_mode', 'Intra-subject')
+
+        if mode == "Intra-subject":
+            print(f"📦 数据模式: Intra-subject | 划分被试 {self.config.subject_id} 的 80%训练 20%测试")
+            dataset = MyPP2Dataset(is_flipped=False, transform=self.config.transform, subject_id=self.config.subject_id)
+            train_loader, val_loader = create_dataloaders(dataset=dataset, batch_size=self.config.batch_size,
+                                                          shuffle=True)
+
+            print(f"  -> 训练集 Batch 数量: {len(train_loader)} | 测试集 Batch 数量: {len(val_loader)}")
+            return train_loader, val_loader
+
+        elif mode == "Cross-subject":
+            print(f"🌍 数据模式: Cross-subject (LOSO) | 测试集为被试: {self.config.subject_id}")
+
+            if not hasattr(self.config, 'all_subjects'):
+                raise ValueError("Cross-subject 模式下需要在 config 中提供 all_subjects 列表")
+
+            train_datasets = []
+            # 遍历所有被试，排除当前测试被试，其余全部作为训练集
+            for subj in self.config.all_subjects:
+                if subj != self.config.subject_id:
+                    ds = MyPP2Dataset(is_flipped=False, transform=self.config.transform, subject_id=subj)
+                    train_datasets.append(ds)
+
+            # 拼接 N-1 个被试的数据集
+            train_dataset = ConcatDataset(train_datasets)
+            # 当前被试作为完整的验证/测试集
+            val_dataset = MyPP2Dataset(is_flipped=False, transform=self.config.transform,
+                                       subject_id=self.config.subject_id)
+
+            # 构建 DataLoader
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=self.config.batch_size,
+                shuffle=True,
+                drop_last=True  # 训练时丢弃不足 batch_size 的尾巴，保持维度稳定
+            )
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=self.config.batch_size,
+                shuffle=False
+            )
+
+            print(f"  -> 📦 融合训练集大小: {len(train_dataset)} 样本 (来自其他 {len(train_datasets)} 个被试)")
+            print(f"  -> 📦 独立测试集大小: {len(val_dataset)} 样本 (仅来自被试 {self.config.subject_id})")
+
+            return train_loader, val_loader
+        else:
+            raise ValueError(f"未知的训练模式: {mode}")
 
     # ==================== 冻结与解冻控制 ====================
     def freeze_student_backbone(self):

@@ -61,6 +61,8 @@ def main():
 
         config = get_config('default')
         config.subject_id = subject
+        config.train_mode = MODE
+        config.all_subjects = all_subjects
 
         # 获取模型配置名称：EEGNetv4_VGG_sscnn_student_eeg
         model_subdir = f"{config.eeg_model_name}_{config.image_model_name}_{config.image_model_type}_student_{config.student_modality}"
