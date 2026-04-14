@@ -45,7 +45,7 @@ def main():
     MODE = "Intra-subject"  # 可选: "Intra-subject" 或 "Cross-subject"
 
     # 统计数据根目录 (CSV输出位置)
-    stats_root = os.path.join("offline_pri", MODE)
+    stats_root = os.path.join("outputs/offline_pri", MODE)
     os.makedirs(stats_root, exist_ok=True)
 
     # 权重与图表根目录 (Trainer输出位置)
