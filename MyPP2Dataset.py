@@ -27,7 +27,8 @@ class MyPP2Dataset(Dataset):
                  img_dir="data",
                  eeg_dir="data/EEG/seg_eeg_data",
                  is_flipped=False,
-                 subject_id="01gh"):
+                 subject_id="01gh",
+                 allowed_indices=None):
         self.csv_file = csv_file
         self.transform = transform
         self.img_dir = img_dir
@@ -35,7 +36,16 @@ class MyPP2Dataset(Dataset):
         self.is_flipped = is_flipped
         self.subject_id = subject_id
 
-        self.dataframe = pd.read_excel(self.csv_file)
+        # 读取完整表格
+        full_dataframe = pd.read_excel(self.csv_file)
+
+        # 根据传入的 allowed_indices 截取表格
+        if allowed_indices is not None:
+            # 只保留指定的行，并重置索引，防止后续 __getitem__ 报错
+            self.dataframe = full_dataframe.iloc[allowed_indices].reset_index(drop=True)
+        else:
+            self.dataframe = full_dataframe
+
         self.eeg_col = f"{subject_id}_RL" if is_flipped else f"{subject_id}_LR"
 
     def __len__(self):
