@@ -49,10 +49,11 @@ def main():
     os.makedirs(stats_root, exist_ok=True)
 
     # 权重与图表根目录 (Trainer输出位置)
-    weights_root = "outputs/outputs_offline_distill"
+    weights_root = os.path.join("outputs", "outputs_offline_distill", MODE)
     # ============================================
 
     all_results = []
+
     print(f"🚀 启动批量离线蒸馏 | 模式: {MODE}")
 
     for subject in all_subjects:
@@ -60,6 +61,9 @@ def main():
 
         config = get_config('default')
         config.subject_id = subject
+
+        # 获取模型配置名称：EEGNetv4_VGG_sscnn_student_eeg
+        model_subdir = f"{config.eeg_model_name}_{config.image_model_name}_{config.image_model_type}_student_{config.student_modality}"
 
         # 1. 寻找教师
         try:
@@ -75,17 +79,20 @@ def main():
 
         # 2. 设置 Trainer 的输出目录 (权重、pth、Loss图)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # 路径格式：outputs/outputs_offline_distill/Cross-subject/01gh/20260414_...
-        trainer_out_dir = os.path.join(weights_root, MODE, subject, timestamp)
-        os.makedirs(trainer_out_dir, exist_ok=True)
-        config.output_dir = trainer_out_dir
+        # 目标：outputs/outputs_offline_distill/Intra-subject/EEGNetv4_VGG_.../01gh/timestamp
+        final_out_dir = os.path.join(weights_root, model_subdir, subject, timestamp)
+        os.makedirs(final_out_dir, exist_ok=True)
+
+        config.output_dir = final_out_dir
+        # 我们在这里加一个标记，告诉 Trainer 路径已经死锁了
+        config.is_path_locked = True
 
         # 3. 执行训练
         trainer = OfflineDistillationTrainer(config)
         trainer.train()
 
         # 4. 提取指标并保存单被试 CSV
-        history_path = os.path.join(trainer_out_dir, 'offline_history.pth')
+        history_path = os.path.join(final_out_dir, 'offline_history.pth')
         if os.path.exists(history_path):
             history = torch.load(history_path)
             best_idx = np.argmax(history['val_student_acc'])

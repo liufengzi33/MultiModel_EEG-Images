@@ -28,8 +28,10 @@ class OfflineDistillationTrainer:
         print(f"🚀 初始化离线蒸馏训练器 | 使用设备: {self.device}")
 
         # 1. 动态生成离线特权学习输出目录
-        self.output_dir = getattr(config, 'output_dir',
-                                  config.get_output_dir().replace('outputs_privileged', 'outputs_offline_distill'))
+        if getattr(config, 'is_path_locked', False):
+            self.output_dir = config.output_dir
+        else:
+            self.output_dir = config.get_output_dir().replace('outputs_privileged', 'outputs_offline_distill')
         os.makedirs(self.output_dir, exist_ok=True)
         print(f"📂 输出目录: {self.output_dir}")
 
