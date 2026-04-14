@@ -29,19 +29,20 @@ def find_teacher_ckpt(base_path, eeg_model, img_model, img_type, subject, mode):
     if not subdirs:
         raise FileNotFoundError(f"❌ 目录为空: {search_dir}")
 
-    latest_dir = max(subdirs, key=os.path.getctime)
-    ckpt_path = os.path.join(latest_dir, "best_stage3_finetune_backbone.pth")
+    # 获取所有时间戳文件夹，找到最老（最早）的那个
+    oldest_dir = min(subdirs, key=os.path.getctime)
+    ckpt_path = os.path.join(oldest_dir, "best_stage3_finetune_backbone.pth")
     if not os.path.exists(ckpt_path):
-        pt_files = glob.glob(os.path.join(latest_dir, "*.pth"))
+        pt_files = glob.glob(os.path.join(oldest_dir, "*.pth"))
         ckpt_path = max(pt_files, key=os.path.getctime) if pt_files else None
 
-    return ckpt_path, latest_dir
+    return ckpt_path, oldest_dir
 
 
 def main():
     # ================= 配置区域 =================
     all_subjects = ["01gh", "02szy", "03ysq", "04whx", "05ly", "06wrl", "07lxy"]
-    MODE = "Cross-subject"  # 可选: "Intra-subject" 或 "Cross-subject"
+    MODE = "Intra-subject"  # 可选: "Intra-subject" 或 "Cross-subject"
 
     # 统计数据根目录 (CSV输出位置)
     stats_root = os.path.join("offline_pri", MODE)
