@@ -70,8 +70,8 @@ def main():
     stats_root = os.path.join("outputs", "pri", "Cross_sub")
     os.makedirs(stats_root, exist_ok=True)
 
-    # 模型权重与图表保存根路径 (按要求在 outputs/privileged 下)
-    weights_root = os.path.join("outputs", "privileged", "Cross_sub")
+    # 模型权重与图表保存根路径 (按要求在 outputs/outputs_privileged 下)
+    weights_root = os.path.join("outputs", "outputs_privileged", "Cross_sub")
     # ============================================
 
     all_results = []
