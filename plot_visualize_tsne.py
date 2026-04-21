@@ -118,6 +118,7 @@ def plot_combined_tsne(features, save_path):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"🎉 全局 t-SNE 图表已成功保存至: {save_path}")
+    plt.show()
     plt.close()
 
 
@@ -164,26 +165,28 @@ def plot_feature_orthogonality_heatmap(features, save_path):
     sns.set_theme(style="white", context="paper", font_scale=1.5)
     plt.figure(figsize=(8, 6))
 
+    # 使用 Blues 配色，0 附近显示为近乎白色，1 显示为深蓝色，对比鲜明且清爽
     ax = sns.heatmap(
         sim_matrix,
         annot=True,
         fmt=".3f",
-        cmap="mako",
+        cmap="Blues",
         vmin=0.0, vmax=1.0,
         xticklabels=labels,
         yticklabels=labels,
         square=True,
         linewidths=.5,
-        cbar_kws={"shrink": .8, "label": "Absolute Cosine Similarity"}
+        cbar_kws={"shrink": .8} # 已移除 label
     )
 
-    plt.title('Feature Space Orthogonality Analysis', fontweight='bold', pad=20)
+    # 已移除 plt.title
 
     plt.xticks(rotation=0)
     plt.yticks(rotation=0)
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.show()
     print(f"🎉 正交性热力图已成功保存至: {save_path}")
     plt.close()
 
@@ -218,7 +221,7 @@ def main():
     ).to(device)
 
     # 确保此处的路径和时间戳是刚训练出来的好结果
-    weights_path = f"outputs/outputs_multi_model/{config.base_eeg_model}+{config.base_image_model}_{config.image_model_type}/{config.subject_id}/multimodal_20260406_195304/best_stage3_finetune_backbone.pth"
+    weights_path = f"outputs/outputs_multi_model/{config.base_eeg_model}+{config.base_image_model}_{config.image_model_type}/{config.subject_id}/multimodal_20260406_204841/best_stage3_finetune_backbone.pth"
 
     if os.path.exists(weights_path):
         print(f"📂 找到权重文件: {weights_path}")
