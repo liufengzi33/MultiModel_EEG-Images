@@ -89,7 +89,7 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
     ax_a = fig.add_subplot(gs[0, 1])
     im_a, _ = mne.viz.plot_topomap(b_sp, info_eeg, axes=ax_a, cmap=cmap_shared, show=False)
     # 使用 y=-0.15 将标题下移
-    ax_a.set_title("(a) Baseline Spatial Activation", fontweight='bold', y=-0.15)
+    ax_a.set_title("(a) Baseline Spatial Activation", fontweight='bold', y=-0.20)
 
     # Baseline 独立 Colorbar
     ax_cb_a = fig.add_subplot(gs[0, 0])
@@ -102,7 +102,7 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
     ax_c = fig.add_subplot(gs[1, 1])
     im_c, _ = mne.viz.plot_topomap(d_sp, info_eeg, axes=ax_c, cmap=cmap_shared, show=False)
     # 使用 y=-0.15 将标题下移
-    ax_c.set_title("(c) Online KD Spatial Activation", fontweight='bold', y=-0.15)
+    ax_c.set_title("(c) Online KD Spatial Activation", fontweight='bold', y=-0.32)
 
     # Distilled 独立 Colorbar
     ax_cb_c = fig.add_subplot(gs[1, 0])
@@ -137,7 +137,7 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
         # 核心修改：动态调整 Title 位置
         if i == 0:  # 图 (b)
             ax.set_xticks([])  # 隐藏图 b 的横坐标轴
-            ax.set_title(title, fontweight='bold', y=-0.15)  # 没有 xlabel，-0.15 即可
+            ax.set_title(title, fontweight='bold', y=-0.20)  # 没有 xlabel，-0.15 即可
         else:  # 图 (d)
             ax.set_xlabel("Frequency (Hz)", fontweight='bold')
             ax.set_title(title, fontweight='bold', y=-0.32)  # 有 xlabel，需推得更低 (-0.32) 避开 label
