@@ -57,6 +57,7 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
     终极发表版：
     1. 独立展现空间拓扑结构，Colorbar 位于地形图左侧。
     2. 频率响应图标注具体的频段范围。
+    3. 所有子图的 Title 统一放在图表下方。
     """
     # 准备 64 通道信息
     ch_names = ['Fpz', 'Fp1', 'Fp2', 'AF3', 'AF4', 'AF7', 'AF8', 'Fz', 'F1', 'F2', 'F3', 'F4',
@@ -76,41 +77,41 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
     d_sp = dist_spatial[:len(eeg_indices)]
 
     sns.set_theme(style="ticks", context="paper", font_scale=1.4)
-    fig = plt.figure(figsize=(18, 9))
+    # 高度稍作增加以容纳底部的 Title
+    fig = plt.figure(figsize=(18, 9.5))
 
-    # 布局优化：Colorbar 在左，Topomap 在中间，PSD 在右
-    # CB1(0.08), Topomap1(1.2), 空(0.2), PSD(2.0)
-    gs = fig.add_gridspec(2, 4, width_ratios=[0.08, 1.2, 0.2, 2.0], hspace=0.35, wspace=0.1)
+    # 布局优化：增加 hspace (0.35 -> 0.45) 防止上下两行的文字/图表打架
+    gs = fig.add_gridspec(2, 4, width_ratios=[0.08, 1.2, 0.2, 2.0], hspace=0.45, wspace=0.1)
 
     cmap_shared = "magma"
 
-    # --- (a) Baseline Topomap (位于第一行第二列) ---
+    # --- (a) Baseline Topomap ---
     ax_a = fig.add_subplot(gs[0, 1])
     im_a, _ = mne.viz.plot_topomap(b_sp, info_eeg, axes=ax_a, cmap=cmap_shared, show=False)
-    ax_a.set_title("(a) Baseline Spatial Activation", fontweight='bold', pad=10)
+    # 使用 y=-0.15 将标题下移
+    ax_a.set_title("(a) Baseline Spatial Activation", fontweight='bold', y=-0.15)
 
-    # Baseline 独立 Colorbar (位于第一行第一列，即 Topomap 左侧)
+    # Baseline 独立 Colorbar
     ax_cb_a = fig.add_subplot(gs[0, 0])
     cb_a = fig.colorbar(im_a, cax=ax_cb_a, orientation='vertical')
     cb_a.set_label("Weight", fontweight='bold')
-    # 将刻度移到左边，防止和图重叠
     ax_cb_a.yaxis.set_ticks_position('left')
     ax_cb_a.yaxis.set_label_position('left')
 
-    # --- (c) Distilled Topomap (位于第二行第二列) ---
+    # --- (c) Distilled Topomap ---
     ax_c = fig.add_subplot(gs[1, 1])
     im_c, _ = mne.viz.plot_topomap(d_sp, info_eeg, axes=ax_c, cmap=cmap_shared, show=False)
-    ax_c.set_title("(c) Online KD Spatial Activation", fontweight='bold', pad=10)
+    # 使用 y=-0.15 将标题下移
+    ax_c.set_title("(c) Online KD Spatial Activation", fontweight='bold', y=-0.15)
 
-    # Distilled 独立 Colorbar (位于第二行第一列，即 Topomap 左侧)
+    # Distilled 独立 Colorbar
     ax_cb_c = fig.add_subplot(gs[1, 0])
     cb_c = fig.colorbar(im_c, cax=ax_cb_c, orientation='vertical')
     cb_c.set_label("Weight", fontweight='bold')
-    # 将刻度移到左边
     ax_cb_c.yaxis.set_ticks_position('left')
     ax_cb_c.yaxis.set_label_position('left')
 
-    # --- (b) & (d) Frequency Response (位于最右侧) ---
+    # --- (b) & (d) Frequency Response ---
     for i, (f, p, title, color, ax_idx) in enumerate([
         (base_freqs, base_psd, "(b) Baseline Filter Frequency Response", "#4C72B0", gs[0, 3]),
         (dist_freqs, dist_psd, "(d) Distilled Filter Frequency Response", "#C44E52", gs[1, 3])
@@ -119,7 +120,7 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
         ax.plot(f, p, color=color, lw=3)
         ax.fill_between(f, p, alpha=0.3, color=color)
 
-        # 统一显示三波段阴影，并在下方加上频段范围
+        # 统一显示三波段阴影
         bands = {
             'Alpha\n(8-12 Hz)': (8, 12, '#7F8C8D'),
             'Beta\n(13-30 Hz)': (13, 30, '#E67E22'),
@@ -127,23 +128,27 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
         }
         for name, (l, h, c) in bands.items():
             ax.axvspan(l, h, color='gray', alpha=0.1)
-            # 调整了 y 坐标，确保两行文字都能显示清楚
             ax.text((l + h) / 2, 0.88, name, ha='center', va='top', color=c, fontweight='bold', fontsize=12)
 
-        ax.set_title(title, fontweight='bold')
         ax.set_xlim(1, 45)
         ax.set_ylim(0, 1.1)
-        if i == 0:
-            ax.set_xticks([])  # 隐藏图 b 的横坐标轴
-        else:
-            ax.set_xlabel("Frequency (Hz)", fontweight='bold')
         sns.despine(ax=ax)
 
-    plt.tight_layout()
+        # 核心修改：动态调整 Title 位置
+        if i == 0:  # 图 (b)
+            ax.set_xticks([])  # 隐藏图 b 的横坐标轴
+            ax.set_title(title, fontweight='bold', y=-0.15)  # 没有 xlabel，-0.15 即可
+        else:  # 图 (d)
+            ax.set_xlabel("Frequency (Hz)", fontweight='bold')
+            ax.set_title(title, fontweight='bold', y=-0.32)  # 有 xlabel，需推得更低 (-0.32) 避开 label
+
+    # 留出底部边距，防止图 d 的 title 导出时被截断
+    plt.subplots_adjust(bottom=0.15)
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"🎉 终极学术排版图表已保存至: {save_path}")
     plt.show()
+    plt.close()  # 生成后关闭，清理内存
 
 
 def main():
