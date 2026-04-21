@@ -89,7 +89,7 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
     ax_a = fig.add_subplot(gs[0, 1])
     im_a, _ = mne.viz.plot_topomap(b_sp, info_eeg, axes=ax_a, cmap=cmap_shared, show=False)
     # 使用 y=-0.15 将标题下移
-    ax_a.set_title("(a) Baseline Spatial Activation", fontweight='bold', y=-0.20)
+    ax_a.set_title("(a) w/o KD Spatial Activation", fontweight='bold', y=-0.20)
 
     # Baseline 独立 Colorbar
     ax_cb_a = fig.add_subplot(gs[0, 0])
@@ -113,7 +113,7 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
 
     # --- (b) & (d) Frequency Response ---
     for i, (f, p, title, color, ax_idx) in enumerate([
-        (base_freqs, base_psd, "(b) Baseline Filter Frequency Response", "#4C72B0", gs[0, 3]),
+        (base_freqs, base_psd, "(b) Undistilled Filter Frequency Response", "#4C72B0", gs[0, 3]),
         (dist_freqs, dist_psd, "(d) Distilled Filter Frequency Response", "#C44E52", gs[1, 3])
     ]):
         ax = fig.add_subplot(ax_idx)
