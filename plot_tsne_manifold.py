@@ -84,41 +84,58 @@ def plot_tsne_comparison(features_baseline, features_distilled, labels, save_pat
     tsne_distilled = tsne.fit_transform(features_distilled)
 
     sns.set_theme(style="ticks", context="paper", font_scale=1.5)
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    # 高度稍微增加一点点，以便给底部的文字留出空间
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6.5))
 
     palette = {0: "#4C72B0", 1: "#C44E52"}
     markers = {0: 'o', 1: 's'}
     class_names = ["Left Safer (Class 0)", "Right Safer (Class 1)"]
 
-    # (a) Baseline
+    # ================= (a) Baseline =================
     sns.scatterplot(
         x=tsne_baseline[:, 0], y=tsne_baseline[:, 1],
         hue=labels, style=labels, markers=markers, palette=palette,
         alpha=0.8, s=60, ax=axes[0], legend=False, edgecolor="w", linewidth=0.5
     )
-    axes[0].set_title("(a) Pure EEG Model (Baseline)", fontsize=16, fontweight='bold', pad=15)
+    # 1. 命名坐标轴
+    axes[0].set_xlabel("t-SNE Dimension 1", fontsize=14, fontweight='bold', labelpad=10)
+    axes[0].set_ylabel("t-SNE Dimension 2", fontsize=14, fontweight='bold', labelpad=10)
+    # 隐藏刻度值，保持图面整洁
     axes[0].set_xticks([])
     axes[0].set_yticks([])
+    # 2. 将 title 移至下方 (利用负向的 y 值)
+    axes[0].set_title("(a) Pure EEG Model (w/o KD)", fontsize=16, fontweight='bold', y=-0.22)
 
-    # (b) Distilled
+    # ================= (b) Distilled =================
     sns.scatterplot(
         x=tsne_distilled[:, 0], y=tsne_distilled[:, 1],
         hue=labels, style=labels, markers=markers, palette=palette,
         alpha=0.8, s=60, ax=axes[1], edgecolor="w", linewidth=0.5
     )
-    axes[1].set_title("(b) Distilled EEG Model (Online KD)", fontsize=16, fontweight='bold', pad=15)
+    # 1. 命名坐标轴
+    axes[1].set_xlabel("t-SNE Dimension 1", fontsize=14, fontweight='bold', labelpad=10)
+    axes[1].set_ylabel("t-SNE Dimension 2", fontsize=14, fontweight='bold', labelpad=10)
+    # 隐藏刻度值
     axes[1].set_xticks([])
     axes[1].set_yticks([])
+    # 2. 将 title 移至下方
+    axes[1].set_title("(b) Distilled EEG Model (Online KD)", fontsize=16, fontweight='bold', y=-0.22)
 
+    # 图例设置
     handles = [plt.Line2D([0], [0], marker=markers[i], color='w', markerfacecolor=palette[i], markersize=10) for i in
                [0, 1]]
     axes[1].legend(handles, class_names, title="Decision", loc='best', fontsize=12, frameon=True, shadow=True)
 
     sns.despine()
-    plt.tight_layout()
+    # 适度留白底部以防止下方 title 被截断
+    plt.subplots_adjust(bottom=0.2)
+    # bbox_inches='tight' 会确保图片保存时包含外部所有文本（包括被移到底部的title）
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"🎉 图像已成功保存至: {save_path}")
+
     plt.show()
+    # 建议保存完就关闭，避免占内存
+    plt.close()
 
 
 def main():
