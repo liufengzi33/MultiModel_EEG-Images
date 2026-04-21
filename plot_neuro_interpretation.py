@@ -58,6 +58,7 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
     1. 独立展现空间拓扑结构，Colorbar 位于地形图左侧。
     2. 频率响应图标注具体的频段范围。
     3. 所有子图的 Title 统一放在图表下方。
+    4. 【巨型字号 2.5 + 紧凑排版 修复底部空白过大】
     """
     # 准备 64 通道信息
     ch_names = ['Fpz', 'Fp1', 'Fp2', 'AF3', 'AF4', 'AF7', 'AF8', 'Fz', 'F1', 'F2', 'F3', 'F4',
@@ -76,38 +77,40 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
     b_sp = base_spatial[:len(eeg_indices)]
     d_sp = dist_spatial[:len(eeg_indices)]
 
-    sns.set_theme(style="ticks", context="paper", font_scale=1.4)
-    # 高度稍作增加以容纳底部的 Title
-    fig = plt.figure(figsize=(18, 9.5))
+    # 全局基础刻度和字体拉满到 2.5
+    sns.set_theme(style="ticks", context="paper", font_scale=2.5)
 
-    # 布局优化：增加 hspace (0.35 -> 0.45) 防止上下两行的文字/图表打架
-    gs = fig.add_gridspec(2, 4, width_ratios=[0.08, 1.2, 0.2, 2.0], hspace=0.45, wspace=0.1)
+    # 【修改1】稍微降低画布总高度 (13 -> 11)，避免纵向被强行拉伸导致空白
+    fig = plt.figure(figsize=(22, 11))
+
+    # 【修改2】适当缩小上下两行的间距 hspace (0.7 -> 0.55)
+    gs = fig.add_gridspec(2, 4, width_ratios=[0.08, 1.2, 0.2, 2.0], hspace=0.55, wspace=0.1)
 
     cmap_shared = "magma"
 
     # --- (a) Baseline Topomap ---
     ax_a = fig.add_subplot(gs[0, 1])
     im_a, _ = mne.viz.plot_topomap(b_sp, info_eeg, axes=ax_a, cmap=cmap_shared, show=False)
-    # 使用 y=-0.15 将标题下移
-    ax_a.set_title("(a) w/o KD Spatial Activation", fontweight='bold', y=-0.20)
+    # 【修改3】统一上收标题，只留出必要的距离 (y=-0.25)
+    ax_a.set_title("(a) w/o KD Spatial Activation", fontweight='bold', fontsize=26, y=-0.25)
 
     # Baseline 独立 Colorbar
     ax_cb_a = fig.add_subplot(gs[0, 0])
     cb_a = fig.colorbar(im_a, cax=ax_cb_a, orientation='vertical')
-    cb_a.set_label("Weight", fontweight='bold')
+    cb_a.set_label("Weight", fontweight='bold', fontsize=22)
     ax_cb_a.yaxis.set_ticks_position('left')
     ax_cb_a.yaxis.set_label_position('left')
 
     # --- (c) Distilled Topomap ---
     ax_c = fig.add_subplot(gs[1, 1])
     im_c, _ = mne.viz.plot_topomap(d_sp, info_eeg, axes=ax_c, cmap=cmap_shared, show=False)
-    # 使用 y=-0.15 将标题下移
-    ax_c.set_title("(c) Online KD Spatial Activation", fontweight='bold', y=-0.32)
+    # (c) 下方没有横坐标，可以直接贴紧
+    ax_c.set_title("(c) Online KD Spatial Activation", fontweight='bold', fontsize=26, y=-0.35)
 
     # Distilled 独立 Colorbar
     ax_cb_c = fig.add_subplot(gs[1, 0])
     cb_c = fig.colorbar(im_c, cax=ax_cb_c, orientation='vertical')
-    cb_c.set_label("Weight", fontweight='bold')
+    cb_c.set_label("Weight", fontweight='bold', fontsize=22)
     ax_cb_c.yaxis.set_ticks_position('left')
     ax_cb_c.yaxis.set_label_position('left')
 
@@ -117,7 +120,7 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
         (dist_freqs, dist_psd, "(d) Distilled Filter Frequency Response", "#C44E52", gs[1, 3])
     ]):
         ax = fig.add_subplot(ax_idx)
-        ax.plot(f, p, color=color, lw=3)
+        ax.plot(f, p, color=color, lw=4)
         ax.fill_between(f, p, alpha=0.3, color=color)
 
         # 统一显示三波段阴影
@@ -128,27 +131,29 @@ def plot_real_neuro_interpretation_final(base_freqs, base_psd, base_spatial,
         }
         for name, (l, h, c) in bands.items():
             ax.axvspan(l, h, color='gray', alpha=0.1)
-            ax.text((l + h) / 2, 0.88, name, ha='center', va='top', color=c, fontweight='bold', fontsize=12)
+            ax.text((l + h) / 2, 0.88, name, ha='center', va='top', color=c, fontweight='bold', fontsize=18)
 
         ax.set_xlim(1, 45)
         ax.set_ylim(0, 1.1)
         sns.despine(ax=ax)
 
-        # 核心修改：动态调整 Title 位置
         if i == 0:  # 图 (b)
-            ax.set_xticks([])  # 隐藏图 b 的横坐标轴
-            ax.set_title(title, fontweight='bold', y=-0.20)  # 没有 xlabel，-0.15 即可
+            ax.set_xticks([])
+            ax.set_title(title, fontweight='bold', fontsize=26, y=-0.25)
         else:  # 图 (d)
-            ax.set_xlabel("Frequency (Hz)", fontweight='bold')
-            ax.set_title(title, fontweight='bold', y=-0.32)  # 有 xlabel，需推得更低 (-0.32) 避开 label
+            ax.set_xlabel("Frequency (Hz)", fontweight='bold', fontsize=22)
+            # 图 (d) 下方有 xlabel，因此避开即可，不需要推到 -0.42 那么夸张
+            ax.set_title(title, fontweight='bold', fontsize=26, y=-0.35)
 
-    # 留出底部边距，防止图 d 的 title 导出时被截断
-    plt.subplots_adjust(bottom=0.15)
+            # 【修改4】收紧底部的强制留白 (0.25 -> 0.12)
+    plt.subplots_adjust(bottom=0.12)
+
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    # bbox_inches='tight' 会自动裁切边缘多余的空白
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f"🎉 终极学术排版图表已保存至: {save_path}")
+    print(f"🎉 巨型字号紧凑排版图表已保存至: {save_path}")
     plt.show()
-    plt.close()  # 生成后关闭，清理内存
+    plt.close()
 
 
 def main():
