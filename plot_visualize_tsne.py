@@ -56,11 +56,11 @@ def extract_features(model, dataloader, device):
 
 def plot_combined_tsne(features, save_path):
     """
-    使用 Seaborn 绘制将四个特征置于同一隐空间的全局 t-SNE 可视化图
+    使用 Seaborn 绘制将四个特征置于同一隐空间的全局 t-SNE 可视化图 (大字号、不加粗、无标题)
     """
-    sns.set_theme(style="ticks", context="paper", font_scale=1.5)
+    # 1. 基础字号保持较大的比例
+    sns.set_theme(style="ticks", context="paper", font_scale=2.2)
 
-    # 1. 拼接所有特征，因为现在维度全是 64，可以直接 vstack
     X = np.vstack([features['s_E'], features['s_I'], features['d_E'], features['d_I']])
 
     n_samples = len(features['s_E'])
@@ -70,48 +70,46 @@ def plot_combined_tsne(features, save_path):
              ['$\mathbf{d}_I$ (Image Private)'] * n_samples
 
     print("🧠 正在计算全局 t-SNE 降维 (四个特征共同映射)...")
-    # 将所有的特征放入同一个 t-SNE 拟合，保证流形空间一致
     tsne = TSNE(n_components=2, perplexity=30, random_state=42, init='pca', learning_rate='auto')
     X_2d = tsne.fit_transform(X)
 
-    # 构建 Pandas DataFrame 以便于 Seaborn 绘图
     df = pd.DataFrame({
         'TSNE-1': X_2d[:, 0],
         'TSNE-2': X_2d[:, 1],
         'Feature Type': labels
     })
 
-    plt.figure(figsize=(10, 8))
+    # 2. 画布适度扩大以容纳大号图例
+    plt.figure(figsize=(12, 10))
 
-    # 定义颜色字典，确保区分度
     palette = {
-        '$\mathbf{s}_E$ (EEG Common)': '#1f77b4',  # 经典蓝
-        '$\mathbf{s}_I$ (Image Common)': '#ff7f0e',  # 经典橙
-        '$\mathbf{d}_E$ (EEG Private)': '#2ca02c',  # 经典绿
-        '$\mathbf{d}_I$ (Image Private)': '#d62728'  # 经典红
+        '$\mathbf{s}_E$ (EEG Common)': '#1f77b4',
+        '$\mathbf{s}_I$ (Image Common)': '#ff7f0e',
+        '$\mathbf{d}_E$ (EEG Private)': '#2ca02c',
+        '$\mathbf{d}_I$ (Image Private)': '#d62728'
     }
 
-    # 增加不同的 Marker 形状，方便黑白打印时依然清晰
     markers = {
-        '$\mathbf{s}_E$ (EEG Common)': 'o',  # 圆圈
-        '$\mathbf{s}_I$ (Image Common)': 'X',  # 叉号
-        '$\mathbf{d}_E$ (EEG Private)': 's',  # 方块
-        '$\mathbf{d}_I$ (Image Private)': 'D'  # 菱形
+        '$\mathbf{s}_E$ (EEG Common)': 'o',
+        '$\mathbf{s}_I$ (Image Common)': 'X',
+        '$\mathbf{d}_E$ (EEG Private)': 's',
+        '$\mathbf{d}_I$ (Image Private)': 'D'
     }
 
-    # 绘制单张散点图
-    sns.scatterplot(
+    # 3. 散点尺寸放大 (s=200) 防止字体过大显得点太小
+    ax = sns.scatterplot(
         data=df, x='TSNE-1', y='TSNE-2', hue='Feature Type', style='Feature Type',
-        markers=markers, palette=palette, alpha=0.7, edgecolor='w', s=80
+        markers=markers, palette=palette, alpha=0.7, edgecolor='w', s=200
     )
 
-    plt.title('Global Feature Space Visualization (t-SNE)', fontweight='bold', pad=15)
+    # 4. 去除 title，坐标轴大字号且取消加粗
+    plt.xlabel('TSNE-1', fontsize=24, labelpad=15)
+    plt.ylabel('TSNE-2', fontsize=24, labelpad=15)
 
-    # 调整图例位置，避免遮挡数据点
-    plt.legend(title='', loc='best', frameon=True, shadow=True, fontsize=12)
+    # 5. 图例字体放大
+    plt.legend(title='', loc='best', frameon=True, shadow=True, fontsize=20, markerscale=1.5)
     plt.grid(True, linestyle='--', alpha=0.5)
 
-    # 优化布局并保存
     sns.despine()
     plt.tight_layout()
 
@@ -119,33 +117,28 @@ def plot_combined_tsne(features, save_path):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"🎉 全局 t-SNE 图表已成功保存至: {save_path}")
     plt.show()
-    plt.close()
 
+    # 恢复默认风格，防止影响其他运行
+    sns.reset_orig()
+    plt.close()
 
 def plot_feature_orthogonality_heatmap(features, save_path):
     """
-    计算并绘制特征空间之间的正交性（绝对余弦相似度）热力图
-    注意：维度统一后，去除了之前粗暴的截断，现在是精确计算。
+    计算并绘制特征空间之间的正交性（绝对余弦相似度）热力图 (大字号、不加粗版)
     """
     print("🧠 正在计算特征空间的正交性矩阵...")
 
-    # 转换为 Tensor 以便利用 PyTorch 的矩阵运算
     s_E = torch.tensor(features['s_E'])
     s_I = torch.tensor(features['s_I'])
     d_E = torch.tensor(features['d_E'])
     d_I = torch.tensor(features['d_I'])
 
     def precise_cosine_similarity(A, B):
-        """精准的余弦相似度计算，维度已经是完全匹配的"""
-        # 归一化
         A_norm = F.normalize(A, p=2, dim=1)
         B_norm = F.normalize(B, p=2, dim=1)
-
-        # 计算所有样本对的绝对余弦相似度的平均值
         cosine_sim = (A_norm * B_norm).sum(dim=1)
         return cosine_sim.abs().mean().item()
 
-    # 构建 4x4 的相似度矩阵
     feature_list = [
         ('$\mathbf{s}_E$', s_E),
         ('$\mathbf{s}_I$', s_I),
@@ -161,11 +154,13 @@ def plot_feature_orthogonality_heatmap(features, save_path):
         for j in range(n):
             sim_matrix[i, j] = precise_cosine_similarity(feature_list[i][1], feature_list[j][1])
 
-    # 开始使用 Seaborn 绘图
-    sns.set_theme(style="white", context="paper", font_scale=1.5)
-    plt.figure(figsize=(8, 6))
+    # 1. 设置偏大字号 (font_scale=1.6)
+    sns.set_theme(style="white", context="paper", font_scale=1.6)
 
-    # 使用 Blues 配色，0 附近显示为近乎白色，1 显示为深蓝色，对比鲜明且清爽
+    # 画布大小微调为 9x7
+    plt.figure(figsize=(9, 7))
+
+    # 2. 内部相似度数值保留 20pt 大小，去除了 "weight": "bold"
     ax = sns.heatmap(
         sim_matrix,
         annot=True,
@@ -176,21 +171,25 @@ def plot_feature_orthogonality_heatmap(features, save_path):
         yticklabels=labels,
         square=True,
         linewidths=.5,
-        cbar_kws={"shrink": .8} # 已移除 label
+        cbar_kws={"shrink": .8},
+        annot_kws={"size": 20}
     )
 
-    # 已移除 plt.title
+    # 3. 横纵坐标的特征名称保留 22pt，去除了 fontweight='bold'
+    ax.set_xticklabels(labels, fontsize=22)
+    ax.set_yticklabels(labels, fontsize=22, rotation=0)
 
-    plt.xticks(rotation=0)
-    plt.yticks(rotation=0)
+    # 取消底部的多余刻度线显示，让画面更干净
+    ax.tick_params(axis='both', which='both', length=0)
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.show()
     print(f"🎉 正交性热力图已成功保存至: {save_path}")
+
+    # 恢复默认风格，防止影响同环境下的其他绘图
+    sns.reset_orig()
     plt.close()
-
-
 def main():
     config = config_multi_model.Config()
     device = config.device
